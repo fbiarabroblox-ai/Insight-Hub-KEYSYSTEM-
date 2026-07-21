@@ -258,7 +258,6 @@ local function redeemKey()
 		local TweenService = game:GetService("TweenService")
 		local ReplicatedStorage = game:GetService("ReplicatedStorage")
 		local SoundService = game:GetService("SoundService")
-		local Remote = ReplicatedStorage.PlayerDataChanged
 		local player = Players.LocalPlayer
 		local MusicService = Instance.new("Sound")
 		MusicService.Parent =  SoundService
