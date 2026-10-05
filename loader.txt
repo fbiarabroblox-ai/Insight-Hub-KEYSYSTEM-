@@ -1,6 +1,7 @@
 --[[
-    InsightHub - Key System UI (v2)
+    InsightHub - Key System UI (v3)
     Исправлено:
+	(V2)
     - Добавлена AnchorPoint для правильного центрирования при любом разрешении экрана
     - Увеличен размер фрейма и добавлены отступы, чтобы элементы не наезжали друг на друга
     - Добавлена реальная логика кнопок (Redeem / Close / Hide), которой не было вообще
@@ -9,6 +10,19 @@
     - Добавлена мягкая тень под окном для глубины
     - Ввод по Enter теперь тоже редимит ключ
     - Защита от повторного создания GUI при перезапуске скрипта
+	(V3)
+	- Добавлена поддержка полета для мобильных устройств
+	- улучшен ESP
+	- добавлены увидомления
+	- улучшен автофарм
+	- улучшено радио
+	- добавлен новый тип строки
+	- оптимизация (загрузка скрипта на пк составляет 4.99 - 5.04 сек)
+	что будет добавленно:
+	- флинг
+	- увеличение хитбоксов
+
+
 ]]
 
 local Players = game:GetService("Players")
@@ -18,6 +32,152 @@ local Workspace = game:GetService("Workspace")
 -- Убираем старый GUI, если скрипт запускают повторно
 local old = player:FindFirstChild("PlayerGui") and player.PlayerGui:FindFirstChild("InsightHub_KeySystem")
 if old then old:Destroy() end
+local playerGui = player:WaitForChild("PlayerGui")
+local timer = 0
+
+local outline = Instance.new("Highlight")
+local outline1 = Instance.new("Highlight")
+outline1.FillColor = Color3.new(1, 0, 0)
+outline1.OutlineColor = Color3.new(1, 0, 0)
+outline.FillColor = Color3.new(0, 0, 01)
+outline.OutlineColor = Color3.new(0, 0, 01)
+
+
+
+-- Функция вызова уведомления
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Стек активных уведомлений для отслеживания их позиций
+local activeNotifications = {}
+
+local function showNotification(text)
+	text = text or "TEST"
+	local displayTime = 5
+
+	local screenGui = playerGui:FindFirstChild("NotificationGui")
+	if not screenGui then
+		screenGui = Instance.new("ScreenGui")
+		screenGui.Name = "NotificationGui"
+		screenGui.ResetOnSpawn = false
+		screenGui.Parent = playerGui
+	end
+
+	-- Параметры размеров и отступов
+	local startX = 1.1          -- За экраном
+	local targetX = 0.72       -- На экране
+	local startY = 0.05        -- Первое уведомление спавнится тут (5% сверху)
+	local offsetStep = 0.095    -- Шаг сдвига вниз для каждого следующего уведомления
+
+	-- Создаём элемент
+	local Frame = Instance.new("Frame")
+	local Img = Instance.new("ImageLabel")
+	local Text = Instance.new("TextLabel")
+	local UICorner = Instance.new("UICorner")
+	local UIAspectRatioConstraint = Instance.new("UIAspectRatioConstraint")
+
+	Frame.Parent = screenGui
+	Frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+	Frame.BackgroundTransparency = 0.2
+	Frame.BorderSizePixel = 0
+	Frame.Size = UDim2.new(0.25, 0, 0.08, 0)
+
+	-- Ставим на стартовую позицию справа
+	Frame.Position = UDim2.new(startX, 0, startY, 0)
+
+	local uiConstraint = Instance.new("UISizeConstraint")
+	uiConstraint.MinSize = Vector2.new(200, 40)
+	uiConstraint.MaxSize = Vector2.new(350, 60)
+	uiConstraint.Parent = Frame
+
+	UICorner.CornerRadius = UDim.new(0.2, 0)
+	UICorner.Parent = Frame
+
+	Img.Name = "Img"
+	Img.Parent = Frame
+	Img.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	Img.BackgroundTransparency = 1
+	Img.BorderSizePixel = 0
+	Img.Position = UDim2.new(0.03, 0, 0.1, 0)
+	Img.Size = UDim2.new(0.8, 0, 0.8, 0)
+	Img.Image = "rbxassetid://111097590799148"
+
+	UIAspectRatioConstraint.Parent = Img
+	UIAspectRatioConstraint.AspectRatio = 1
+
+	Text.Name = "Text"
+	Text.Parent = Frame
+	Text.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	Text.BackgroundTransparency = 1
+	Text.BorderSizePixel = 0
+	Text.Position = UDim2.new(0.2, 0, 0.1, 0)
+	Text.Size = UDim2.new(0.75, 0, 0.8, 0)
+	Text.Font = Enum.Font.Unknown
+	Text.Text = text
+	Text.TextColor3 = Color3.fromRGB(255, 255, 255)
+	Text.TextScaled = true
+	Text.TextWrapped = true
+
+	-- Звук
+	local sound = Instance.new("Sound")
+	sound.SoundId = "rbxassetid://114029807919810"
+	sound.Volume = 0.5
+	sound.Parent = Frame
+	sound:Play()
+
+	-- Добавляем текущее плашку в список активных
+	table.insert(activeNotifications, 1, Frame) -- Добавляем в начало таблицы
+
+	-- Обновляем позиции всех существующих уведомлений (сдвигаем старые вниз)
+	local tweenInfoMove = TweenInfo.new(0.3, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out)
+
+	for index, notifFrame in ipairs(activeNotifications) do
+		local newY = startY + ((index - 1) * offsetStep)
+
+		if index == 1 then
+			-- Новое уведомление вылетает сбоку
+			local targetPos = UDim2.new(targetX, 0, newY, 0)
+			local tweenIn = TweenService:Create(notifFrame, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = targetPos})
+			tweenIn:Play()
+		else
+			-- Старые плавно съезжают вниз
+			local shiftPos = UDim2.new(targetX, 0, newY, 0)
+			TweenService:Create(notifFrame, tweenInfoMove, {Position = shiftPos}):Play()
+		end
+	end
+
+	-- Удаление по истечении времени
+	task.delay(displayTime, function()
+		-- Находим индекс этого уведомления в массиве
+		local itemIndex = table.find(activeNotifications, Frame)
+		if itemIndex then
+			table.remove(activeNotifications, itemIndex)
+		end
+
+		-- Анимация ухода за экран справа
+		local currentY = Frame.Position.Y.Scale
+		local exitPos = UDim2.new(startX, 0, currentY, 0)
+		local tweenOut = TweenService:Create(Frame, TweenInfo.new(0.5, Enum.EasingStyle.Exponential, Enum.EasingDirection.In), {Position = exitPos})
+
+		tweenOut:Play()
+		tweenOut.Completed:Wait()
+		Frame:Destroy()
+
+		-- Пересчитываем позиции оставшихся уведомлений (подтягиваем вверх)
+		for index, notifFrame in ipairs(activeNotifications) do
+			local newY = startY + ((index - 1) * offsetStep)
+			local shiftPos = UDim2.new(targetX, 0, newY, 0)
+			TweenService:Create(notifFrame, tweenInfoMove, {Position = shiftPos}):Play()
+		end
+	end)
+end
+
+
+
+
 
 local keygui = Instance.new("ScreenGui")
 keygui.Name = "InsightHub_KeySystem"
@@ -251,7 +411,63 @@ local function redeemKey()
     - Speed Glitch: normal ground speed, huge WalkSpeed spike the
       instant you leave the ground, resets the instant you land.
 ]]
+		local timet = 0
+		
+		local Timer = {}
+		Timer.__index = Timer
 
+		function Timer.new()
+			local self = setmetatable({}, Timer)
+			self._running = false
+			self._startTime = 0
+			self._elapsed = 0
+			return self
+		end
+
+		-- Запуск таймера
+		function Timer:Start(onUpdateCallback)
+			if self._running then return end
+			self._running = true
+			self._startTime = os.clock()
+
+			-- task.spawn запускает цикл в отдельном фоновом потоке, не приостанавливая основной код
+			task.spawn(function()
+				while self._running do
+					self._elapsed = os.clock() - self._startTime
+
+					-- Если передана функция вызова, отдаём ей форматированное время (например, "01.23")
+					if onUpdateCallback then
+						onUpdateCallback(string.format("%.2f", self._elapsed), self._elapsed)
+					end
+
+					task.wait(0.01) -- Обновление каждые 10 мс (сотые доли секунды)
+				end
+			end)
+		end
+
+		-- Остановка таймера
+		function Timer:Stop()
+			if not self._running then return self._elapsed end
+			self._running = false
+			self._elapsed = os.clock() - self._startTime
+			return self._elapsed
+		end
+
+		-- Получить текущее время без остановки
+		function Timer:GetTime()
+			if self._running then
+				return os.clock() - self._startTime
+			end
+			return self._elapsed
+		end
+		
+		local myTimer = Timer.new()
+
+		myTimer:Start(function(formattedTime, rawSeconds)
+			timet = formattedTime
+		end)
+		
+		
 		local Players = game:GetService("Players")
 		local RunService = game:GetService("RunService")
 		local UserInputService = game:GetService("UserInputService")
@@ -260,12 +476,6 @@ local function redeemKey()
 		local SoundService = game:GetService("SoundService")
 		local player = Players.LocalPlayer
 		local MusicService = Instance.new("Sound")
-        local outline = Instance.new("Highlight")
-        local outline1 = Instance.new("Highlight")
-        outline1.FillColor = Color3.new(1, 0, 0)
-		outline1.OutlineColor = Color3.new(1, 0, 0)
-        outline.FillColor = Color3.new(0, 0, 01)
-		outline.OutlineColor = Color3.new(0, 0, 01)
 		MusicService.Parent =  SoundService
 
 		-- ==================== ESP =========================
@@ -285,13 +495,13 @@ local function redeemKey()
 				end
 			else
 				outline.FillColor = Color3.new(1, 1, 0)
-				outline.OutlineColor = Color3.new(01, 01, 0)
+				outline.OutlineColor = Color3.new(1, 01, 0)
 				outline.Parent = gunObject.parent
 			end
 
 			local SheriffName = gunObject.parent.Name
-			-- НАПИСАТЬ СВОЙ КОД ЗДЕСЬ:
-			-- Например: подсветить объект, вывести уведомление на экран и т.д.
+			showNotification("Sheriff is: "..tostring(SheriffName))
+		
 
 		end
 
@@ -301,10 +511,7 @@ local function redeemKey()
 			if not knifeObject.parent:FindFirstChild("Highlight") then
 				outline1.Parent = knifeObject.parent
 			end
-
-
-			-- НАПИСАТЬ СВОЙ КОД ЗДЕСЬ:
-			-- Например: изменить цвет, проиграть звук и т.д.
+			showNotification("Murderer is: ".. tostring(knifeObject.parent.Name))
 		end
 
 		-- ===================================================
@@ -327,26 +534,46 @@ local function redeemKey()
 		-- ==================== AUTOFARM ====================
 
 		local Workspace = game:GetService("Workspace")
+		local Players = game:GetService("Players")
+		local TweenService = game:GetService("TweenService")
+		local player = Players.LocalPlayer -- если уже объявлены выше, эти 3 строки можно убрать
 
 		local targetCoinName = "Coin_Server"
-		local distanceFromCoin = 3 -- Отступ под монеткой (в стадах)
-		local tweenSpeedStudsPerSec = 16 -- Скорость: 16 studs/sec
+		local tweenSpeedStudsPerSec = 16
+		local UNDER_OFFSET = 3   -- на сколько стадов ниже монетки летим и куда возвращаемся
+		local TOUCH_TIME = 0.5  -- ожидание в монетке
+		local SKIP_TIME = 10     -- сколько сек не возвращаемся к монетке, если она не исчезла
 
-		local isFarming = false -- Флаг работы автофарма
-		local activeTween = nil -- Переменная для хранения текущего твина
+		local isFarming = false
+		local activeTween = nil
+		local farmHold = nil
+		local visited = {} -- [coin] = время посещения
 
-		-- Поиск ближайшей монетки Coin_Server
+		-- Чистка памяти: удаляем удалённые монетки и просроченные записи
+		local function cleanVisited()
+			local now = os.clock()
+			for coin, t in pairs(visited) do
+				if not coin.Parent or now - t > SKIP_TIME then
+					visited[coin] = nil
+				end
+			end
+		end
+
 		local function getClosestCoin(character)
 			local hrp = character:FindFirstChild("HumanoidRootPart")
 			if not hrp then return nil end
 
 			local closestCoin = nil
 			local shortestDistance = math.huge
+			local needle = string.lower(tostring(targetCoinName))
 
 			for _, object in ipairs(Workspace:GetDescendants()) do
-				if object.Name == targetCoinName and (object:IsA("BasePart") or object:IsA("Model")) then
-					local coinPosition = object:IsA("BasePart") and object.Position or object:GetPivot().Position
-					local distance = (hrp.Position - coinPosition).Magnitude
+				if not visited[object]
+					and (object:IsA("BasePart") or object:IsA("Model"))
+					and string.find(string.lower(object.Name), needle, 1, true) then
+
+					local pos = object:IsA("BasePart") and object.Position or object:GetPivot().Position
+					local distance = (hrp.Position - pos).Magnitude
 
 					if distance < shortestDistance then
 						shortestDistance = distance
@@ -358,7 +585,49 @@ local function redeemKey()
 			return closestCoin, shortestDistance
 		end
 
-		-- Основной цикл автофарма
+		local function freezeCharacter(character)
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+			local hum = character:FindFirstChildOfClass("Humanoid")
+			if not (hrp and hum) then return end
+
+			hum.PlatformStand = true
+			if not (farmHold and farmHold.Parent) then
+				farmHold = Instance.new("BodyVelocity")
+				farmHold.MaxForce = Vector3.new(1, 1, 1) * math.huge
+				farmHold.Velocity = Vector3.zero
+				farmHold.Parent = hrp
+			end
+		end
+
+		local function unfreezeCharacter()
+			if farmHold then
+				farmHold:Destroy()
+				farmHold = nil
+			end
+			local character = player.Character
+			local hum = character and character:FindFirstChildOfClass("Humanoid")
+			if hum then hum.PlatformStand = false end
+		end
+
+		local function flyTo(hrp, position, rot)
+			local distance = (position - hrp.Position).Magnitude
+			local time = math.max(distance / tweenSpeedStudsPerSec, 0.05)
+
+			activeTween = TweenService:Create(
+				hrp,
+				TweenInfo.new(time, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+				{CFrame = CFrame.new(position) * rot}
+			)
+			activeTween:Play()
+			activeTween.Completed:Wait()
+			activeTween = nil
+		end
+
+		local function teleportTo(hrp, position, rot)
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.CFrame = CFrame.new(position) * rot
+		end
+
 		local function farmLoop()
 			task.spawn(function()
 				while isFarming do
@@ -366,51 +635,54 @@ local function redeemKey()
 					local hrp = character:FindFirstChild("HumanoidRootPart")
 
 					if hrp then
-						local coin, distance = getClosestCoin(character)
+						freezeCharacter(character)
+						cleanVisited()
+						local coin = getClosestCoin(character)
 
-						if coin then
-							local coinPosition = coin:IsA("BasePart") and coin.Position or coin:GetPivot().Position
-							local targetPosition = coinPosition - Vector3.new(0, distanceFromCoin, 0)
+						if coin and coin.Parent then
+							local coinPos = coin:IsA("BasePart") and coin.Position or coin:GetPivot().Position
+							local underY = coinPos.Y - UNDER_OFFSET
+							local rot = hrp.CFrame.Rotation
 
-							local tweenTime = distance / tweenSpeedStudsPerSec
-							if tweenTime <= 0 then tweenTime = 0.05 end
+							-- 1) Вниз под монетку (на 3 стада ниже её высоты)
+							local cur = hrp.Position
+							teleportTo(hrp, Vector3.new(cur.X, underY, cur.Z), rot)
+							if not isFarming then break end
 
-							local tweenInfo = TweenInfo.new(
-								tweenTime,
-								Enum.EasingStyle.Linear,
-								Enum.EasingDirection.Out
-							)
+							-- 2) Под картой к точке под монеткой
+							flyTo(hrp, Vector3.new(coinPos.X, underY, coinPos.Z), rot)
+							if not isFarming then break end
 
-							local targetCFrame = CFrame.new(targetPosition, targetPosition + hrp.CFrame.LookVector)
+							-- 3) Телепорт в монетку и ожидание
+							if coin.Parent then
+								teleportTo(hrp, coinPos, rot)
+								task.wait(TOUCH_TIME)
+								teleportTo(hrp, Vector3.new(coinPos.X, underY, coinPos.Z), rot)
+							end
 
-							-- Создаем и запускаем твин
-							hrp.CFrame = hrp.CFrame - Vector3.new(0,3,0)
-							activeTween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
-							activeTween:Play()
+							-- запоминаем монетку, чтобы не вернуться к ней
+							visited[coin] = os.clock()
+							if not isFarming then break end
 
-							-- Ждём завершения полета к монетке
-							activeTween.Completed:Wait()
-							hrp.CFrame = hrp.CFrame - Vector3.new(0,3,0)
-							activeTween = nil
 						else
-							-- Если монеток нет на карте, ждём 0.5 сек перед следующей проверкой
 							task.wait(0.5)
 						end
 					else
 						task.wait(0.5)
 					end
 
-					-- Минимальная пауза между циклами для стабильности
 					task.wait()
 				end
+
+				unfreezeCharacter()
 			end)
 		end
 
-		-- Функция управления автофармом
 		local function autofarm(action)
 			if action == "start" then
 				if not isFarming then
 					isFarming = true
+					visited = {}
 					print("[AutoFarm]: Запущен!")
 					farmLoop()
 				end
@@ -419,13 +691,21 @@ local function redeemKey()
 					isFarming = false
 					print("[AutoFarm]: Остановлен!")
 
-					-- Если персонаж прямо сейчас твинился — сбрасываем движение
 					if activeTween then
 						activeTween:Cancel()
 						activeTween = nil
-
 					end
+					unfreezeCharacter()
+					visited = {}
 				end
+			end
+		end
+		
+		local function startautofarm(state)
+			if state == true then
+				autofarm("start")
+			else
+				autofarm("stop")
 			end
 		end
 
@@ -449,7 +729,7 @@ local function redeemKey()
 				GunColor = Color3.fromRGB(60, 140, 255),
 				NoneColor = Color3.fromRGB(60, 200, 90),
 			},
-			MusicID = 12345678,
+			MusicID = 142376088,
 		}
 		-- ====================================================
 
@@ -509,6 +789,15 @@ local function redeemKey()
 		local noclipConnection
 
 		-- ----------------------------- FLY -----------------------------
+		-- Стандартные контролы (джойстик на телефоне, WASD на ПК)
+		local controls
+		pcall(function()
+			controls = require(player.PlayerScripts:WaitForChild("PlayerModule", 5)):GetControls()
+		end)
+
+		local jumpConn
+		local lastJumpRequest = 0
+
 		local function startFly()
 			if flying then return end
 			flying = true
@@ -525,6 +814,11 @@ local function redeemKey()
 			flyBodyGyro.CFrame = rootPart.CFrame
 			flyBodyGyro.Parent = rootPart
 
+			-- Кнопка прыжка (телефон и Space на ПК) даёт сигнал JumpRequest
+			jumpConn = UserInputService.JumpRequest:Connect(function()
+				lastJumpRequest = os.clock()
+			end)
+
 			flyConnection = RunService.Heartbeat:Connect(function()
 				if not (flyBodyVelocity and flyBodyGyro and rootPart) then return end
 
@@ -532,21 +826,36 @@ local function redeemKey()
 				local dir = Vector3.new()
 				local strafe = 0
 
-				if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += cf.LookVector end
-				if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= cf.LookVector end
-				if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= cf.RightVector; strafe -= 1 end
-				if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += cf.RightVector; strafe += 1 end
-				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0, 1, 0) end
-				if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+				-- Джойстик / WASD: x = вправо-влево, z = назад-вперёд (вперёд отрицательный)
+				local mv = Vector3.new()
+				if controls then
+					mv = controls:GetMoveVector()
+				else
+					local md = humanoid.MoveDirection
+					if md.Magnitude > 0 then
+						mv = Vector3.new(cf.RightVector:Dot(md), 0, -cf.LookVector:Dot(md))
+					end
+				end
+
+				if mv.Magnitude > 0 then
+					dir += cf.LookVector * -mv.Z + cf.RightVector * mv.X
+					strafe = mv.X
+				end
+
+				-- Прыжок = подъём вверх (зажатая кнопка или недавнее нажатие)
+				local jumping = humanoid.Jump or (os.clock() - lastJumpRequest) < 0.2
+				if jumping or UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+					dir += Vector3.new(0, 1, 0)
+				end
+
+				-- Спуск на ПК
+				if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+					or UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
 					dir -= Vector3.new(0, 1, 0)
 				end
 
 				flyBodyVelocity.Velocity = dir.Magnitude > 0 and dir.Unit * CONFIG.FlySpeed or Vector3.new()
 
-				-- Body tilt = camera's own rotation, taken directly (pitch +
-				-- yaw). Never built from two points, so it can never hit the
-				-- degenerate/NaN case from before. Small roll layered on top
-				-- for banking while strafing.
 				local rotationOnly = cf - cf.Position
 				local bank = CFrame.Angles(0, 0, -strafe * CONFIG.FlyBankAngle)
 				flyBodyGyro.CFrame = CFrame.new(rootPart.Position) * rotationOnly * bank
@@ -560,20 +869,13 @@ local function redeemKey()
 			if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
 			if flyBodyGyro then flyBodyGyro:Destroy(); flyBodyGyro = nil end
 			if humanoid then humanoid.PlatformStand = false end
+			if jumpConn then jumpConn:Disconnect() jumpConn = nil end
 		end
 
 		-- ---------------------------- NOCLIP ----------------------------
 		local function setCollisions(state)
 			for _, part in ipairs(character:GetDescendants()) do
 				if part:IsA("BasePart") then part.CanCollide = state end
-			end
-		end
-
-		local function startautofarm(state)
-			if state == true then
-				autofarm("start")
-			else
-				autofarm("stop")
 			end
 		end
 
@@ -1094,6 +1396,53 @@ local function redeemKey()
 				getState = function() return state end,
 			}
 		end
+		
+		local function createbtnRow(labelText)
+			local row = Instance.new("Frame")
+			row.Size = UDim2.new(1, 0, 0, 52)
+			row.BackgroundColor3 = Color3.fromRGB(21, 17, 18)
+			row.Parent = ToggleList
+
+			local rowCorner = Instance.new("UICorner")
+			rowCorner.CornerRadius = UDim.new(0, 11)
+			rowCorner.Parent = row
+
+			local rowStroke = Instance.new("UIStroke")
+			rowStroke.Color = ACCENT
+			rowStroke.Transparency = 0.85
+			rowStroke.Thickness = 1
+			rowStroke.Parent = row
+
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.new(1, -90, 1, 0)
+			label.Position = UDim2.new(0, 18, 0, 0)
+			label.BackgroundTransparency = 1
+			label.Text = labelText
+			label.TextColor3 = Color3.fromRGB(235, 225, 225)
+			label.TextSize = 15
+			label.Font = Enum.Font.GothamMedium
+			label.TextXAlignment = Enum.TextXAlignment.Left
+			label.Parent = row
+			
+			local btn = Instance.new("TextButton")
+			btn.Size = row.Size
+			btn.BackgroundTransparency = 1
+			btn.Text ="btn		"
+			btn.TextXAlignment = Enum.TextXAlignment.Right
+			btn.TextColor3 = Color3.fromRGB(120, 0, 0)
+			btn.TextTransparency = 0
+			btn.Parent = row
+			
+			row.MouseEnter:Connect(function()
+				TweenService:Create(rowStroke, TweenInfo.new(0.15), {Transparency = 0.5}):Play()
+			end)
+			row.MouseLeave:Connect(function()
+				TweenService:Create(rowStroke, TweenInfo.new(0.15), {Transparency = 0.85}):Play()
+			end)
+			
+			return btn
+			
+		end
 
 		--------------------- text input row --------------------------
 
@@ -1300,7 +1649,7 @@ local function redeemKey()
 
 		local VisualSeparator = createSeparatorRow("Visual Settings")
 		local espToggle = createToggleRow("ESP", false, EspToggle, "ES")
-		local RadioSeparator = createSeparatorRow("(DEPRECATED) radio")
+		local RadioSeparator = createSeparatorRow("(REWORKED) radio")
 		local RadioToggle = createToggleRow("Play/Pause radio", false, PlayID, "PR")
 		local IDValue = createInputRow("MusicID Value", "ID", 999999999999999, CONFIG.MusicID)
 		IDValue.onChange(function()
@@ -1312,6 +1661,12 @@ local function redeemKey()
 		local ToolsSeparator = createSeparatorRow("Sheriff/Murderer tools")
 		local KillAToggle = createToggleRow("Kill all as murderer", false, teleportAllLocally, "KA")
 		local KillCToggle = createToggleRow("Kill closest as murderer", false, teleportNearest, "KC")
+		local notificationSep = createSeparatorRow("Notifications")
+		local notificationbtn = createbtnRow("Test notifications")
+		
+		notificationbtn.MouseButton1Click:Connect(function()
+			showNotification("Failed to fling murderer...")
+		end)
 
 
 
@@ -1432,9 +1787,14 @@ local function redeemKey()
 			-- ESP is left running across respawns on purpose (it watches
 			-- OTHER players, your own death doesn't need to reset it).
 		end)
+		
+		local finalTime = myTimer:Stop()
+		showNotification("Insight Hub loaded in: ".. timet)
+		
 		task.wait(0.6)
 		keygui:Destroy()
 		
+
 	else
 		Subtitle.Text = "Incorrect key! try again!"
 		Subtitle.TextColor3 = Color3.fromRGB(255, 80, 80)
@@ -1561,3 +1921,4 @@ bubble.InputEnded:Connect(function(input)
 		end
 	end
 end)
+
