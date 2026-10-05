@@ -260,6 +260,12 @@ local function redeemKey()
 		local SoundService = game:GetService("SoundService")
 		local player = Players.LocalPlayer
 		local MusicService = Instance.new("Sound")
+        local outline = Instance.new("Highlight")
+        local outline1 = Instance.new("Highlight")
+        outline1.FillColor = Color3.new(1, 0, 0)
+		outline1.OutlineColor = Color3.new(1, 0, 0)
+        outline.FillColor = Color3.new(0, 0, 01)
+		outline.OutlineColor = Color3.new(0, 0, 01)
 		MusicService.Parent =  SoundService
 
 		-- ==================== ESP =========================
@@ -275,9 +281,6 @@ local function redeemKey()
 
 			if SheriffName == nil then
 				if not gunObject.parent:FindFirstChild("Highlight") then
-					local outline = Instance.new("Highlight")
-					outline.FillColor = Color3.new(0, 0, 01)
-					outline.OutlineColor = Color3.new(0, 0, 01)
 					outline.Parent = gunObject.parent
 				end
 			else
@@ -296,10 +299,7 @@ local function redeemKey()
 		local function onKnifeFound(knifeObject)
 			print("[Item Finder]: Найден нож (Knife):", knifeObject:GetFullName())
 			if not knifeObject.parent:FindFirstChild("Highlight") then
-				local outline = Instance.new("Highlight")
-				outline.FillColor = Color3.new(1, 0, 0)
-				outline.OutlineColor = Color3.new(1, 0, 0)
-				outline.Parent = knifeObject.parent
+				outline1.Parent = knifeObject.parent
 			end
 
 
