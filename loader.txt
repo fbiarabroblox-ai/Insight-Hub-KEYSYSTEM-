@@ -1,5 +1,5 @@
 --[[
-    InsightHub - Key System UI (v3)
+    InsightHub - Key System UI (v4)
     Исправлено:
 	(V2)
     - Добавлена AnchorPoint для правильного центрирования при любом разрешении экрана
@@ -17,10 +17,24 @@
 	- улучшен автофарм
 	- улучшено радио
 	- добавлен новый тип строки
-	- оптимизация (загрузка скрипта на пк составляет 4.99 - 5.04 сек)
-	что будет добавленно:
-	- флинг
+	- оптимизация (загрузка скрипта на пк составляет 4.99 - 5.04 сек на мобильных устройствах моментально)
+	(V4)
+	- волкфлинг
 	- увеличение хитбоксов
+	- улучшение ESP
+	что будет добавлено:
+	забрать пистолет
+	флинг мардера/шерифа
+	авто телепорт к пистолету
+	авто шут
+	аимбот
+	-- ЧИТ ВЫХОДИТ ИЗ БЕТЫ на версии 6 -- 
+	что это значит?
+	добавится система ключей (не в тестовом виде)
+	добавится сохранение ключей
+	и многое другое!
+	
+	
 
 
 ]]
@@ -34,104 +48,158 @@ local old = player:FindFirstChild("PlayerGui") and player.PlayerGui:FindFirstChi
 if old then old:Destroy() end
 local playerGui = player:WaitForChild("PlayerGui")
 local timer = 0
+local Fling = false
+local flingstr = 99999
 
 local outline = Instance.new("Highlight")
 local outline1 = Instance.new("Highlight")
-outline1.FillColor = Color3.new(1, 0, 0)
+
+outline1.FillColor = Color3.new(0.8, 0, 0)
 outline1.OutlineColor = Color3.new(1, 0, 0)
-outline.FillColor = Color3.new(0, 0, 01)
-outline.OutlineColor = Color3.new(0, 0, 01)
+outline.FillColor = Color3.new(0, 0, 1)
+outline.OutlineColor = Color3.new(0, 0, 0.8)
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-
 local localPlayer = Players.LocalPlayer
-local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
-local hrp = character:WaitForChild("HumanoidRootPart")
 
-local flingPower = 10000
-local flingConnection = nil
+local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+local hrp = char:WaitForChild("HumanoidRootPart")
 
-localPlayer.CharacterAdded:Connect(function(newChar)
-	character = newChar
-	hrp = character:WaitForChild("HumanoidRootPart")
+local FlingEnabled = false -- Глобальная (для скрипта) переменная состояния
+local flingstr = 1000      -- Сила флинга
+
+-- Функция переключения
+local function SetFling(bool)
+	FlingEnabled = bool
+end
+
+hrp.Touched:Connect(function(hit)
+	-- Проверяем переключатель
+	local pos = hrp.Position
+	if FlingEnabled then
+		local model = hit.Parent
+		if not model then return end
+
+		local humanoid = model:FindFirstChildOfClass("Humanoid")
+
+		-- Проверяем, что коснулись другого персонажа
+		if humanoid and model ~= char then
+			local targetHrp = model:WaitForChild("HumanoidRootPart")
+
+			-- Задаем случайный мощный импульс вращения
+			local randomX = math.random(-20, 20) * flingstr
+			hrp.AssemblyAngularVelocity = Vector3.new(randomX,0,0)
+			task.wait(0.07)
+			hrp.Anchored = true
+			hrp.Position = pos
+			hrp.AssemblyAngularVelocity = Vector3.zero
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			task.wait(0.02)
+			hrp.Anchored = false
+		end
+	end
 end)
 
--- Основная функция переключения флинга
-local function SetFling(Fling)
-	if typeof(Fling) ~= "boolean" then return end
-
-	-- Если передали true и флинг ещё не запущен
-	if Fling and not flingConnection then
-		flingConnection = RunService.Heartbeat:Connect(function()
-			if character and hrp then
-				local currentVelocity = hrp.AssemblyLinearVelocity
-				
-				-- Придаем импульс для физического контакта
-				hrp.AssemblyLinearVelocity = Vector3.new(flingPower, flingPower, flingPower)
-				
-				-- Возвращаем исходную скорость до отрисовки кадра
-				RunService.RenderStepped:Wait()
-				if hrp then
-					hrp.AssemblyLinearVelocity = currentVelocity
-				end
-			end
-		end)
-	-- Если передали false — отключаем событие
-	elseif not Fling and flingConnection then
-		flingConnection:Disconnect()
-		flingConnection = nil
-	end
-end
-
--- Примеры вызова:
--- SetFling(true)  -- Включить WalkFling
--- SetFling(false) -- Выключить WalkFling
+-- Пример вызова:
+-- SetFling(true)
 
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
 
-local HitBoxSize1 = 1
-local HITBOX_SIZE = Vector3.new(HitBoxSize1, HitBoxSize1, HitBoxSize1) -- Желаемый размер хитбокса
-local HITBOX_TRANSPARENCY = 0.7            -- Прозрачность (0 - видимый, 1 - полностью невидимый)
+local HITBOX_SIZE = Vector3.new(10, 10, 10)
+local HITBOX_TRANSPARENCY = 0.5
+local HITBOX_COLOR = Color3.fromRGB(255, 0, 0)
+local HITBOX_MATERIAL = Enum.Material.ForceField
 
--- Функция для изменения размера HRP у конкретного персонажа
-local function expandHitbox(character)
-	if not character then return end
-	
+local isHitboxEnabled = false
+local originalProperties = {}
+
+local function saveOriginalProperties(character)
+	if not character or character == localPlayer.Character then return end
 	local hrp = character:WaitForChild("HumanoidRootPart", 5)
-	if hrp and character ~= localPlayer.Character then
+	if hrp then
+		originalProperties[character] = {
+			Size = hrp.Size,
+			Transparency = hrp.Transparency,
+			Color = hrp.Color,
+			Material = hrp.Material,
+			CanCollide = hrp.CanCollide
+		}
+	end
+end
+
+local function updateHitbox(character)
+	-- Исключаем своего персонажа
+	if not character or character == localPlayer.Character then return end
+
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	if isHitboxEnabled then
+		if not originalProperties[character] then
+			saveOriginalProperties(character)
+		end
+
 		hrp.Size = HITBOX_SIZE
 		hrp.Transparency = HITBOX_TRANSPARENCY
-		hrp.Color = Color3.fromRGB(255, 0, 0) -- Красный цвет для наглядности
-		hrp.Material = Enum.Material.ForceField
+		hrp.Color = HITBOX_COLOR
+		hrp.Material = HITBOX_MATERIAL
 		hrp.CanCollide = false
+	else
+		local original = originalProperties[character]
+		if original then
+			hrp.Size = original.Size
+			hrp.Transparency = original.Transparency
+			hrp.Color = original.Color
+			hrp.Material = original.Material
+			hrp.CanCollide = original.CanCollide
+		end
 	end
 end
 
--- Обработка игрока
 local function onPlayerAdded(player)
+	-- Пропускаем себя
 	if player == localPlayer then return end
 
-	-- Если персонаж уже существует
-	if player.Character then
-		expandHitbox(player.Character)
+	local function setupCharacter(char)
+		saveOriginalProperties(char)
+		updateHitbox(char)
 	end
 
-	-- При каждом респавне игрока
-	player.CharacterAdded:Connect(function(character)
-		expandHitbox(character)
-	end)
+	if player.Character then
+		setupCharacter(player.Character)
+	end
+
+	player.CharacterAdded:Connect(setupCharacter)
 end
 
--- Подключаем всех текущих игроков в игре
+-- Инициализация для других игроков
 for _, player in ipairs(Players:GetPlayers()) do
 	onPlayerAdded(player)
 end
-
--- Подключаем новых игроков, которые будут заходить
 Players.PlayerAdded:Connect(onPlayerAdded)
 
+Players.PlayerRemoving:Connect(function(player)
+	if player.Character then
+		originalProperties[player.Character] = nil
+	end
+end)
+
+-- Функция переключения (меняет хитбокс только у ВСЕХ ДРУГИХ игроков)
+local function SetHitbox(bool)
+	if typeof(bool) ~= "boolean" then return end
+	isHitboxEnabled = bool
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= localPlayer and player.Character then
+			updateHitbox(player.Character)
+		end
+	end
+end
+
+-- Вызовы:
+-- SetHitbox(true)  -- Включает хитбоксы только чужим игрокам
+-- SetHitbox(false) -- Возвращает чужим игрокам нормальный размер
 
 
 -- Функция вызова уведомления
@@ -454,6 +522,7 @@ local function redeemKey()
 
 	if isValid then
 		Subtitle.Text = "Key valid! loading InsightHub!"
+		showNotification("loading InsightHub...")
 		Subtitle.TextColor3 = Color3.fromRGB(80, 255, 120)
 		--[[
     "Hackers Hub" v5
@@ -502,7 +571,7 @@ local function redeemKey()
       instant you leave the ground, resets the instant you land.
 ]]
 		local timet = 0
-		
+
 		local Timer = {}
 		Timer.__index = Timer
 
@@ -550,14 +619,14 @@ local function redeemKey()
 			end
 			return self._elapsed
 		end
-		
+
 		local myTimer = Timer.new()
 
 		myTimer:Start(function(formattedTime, rawSeconds)
 			timet = formattedTime
 		end)
-		
-		
+
+
 		local Players = game:GetService("Players")
 		local RunService = game:GetService("RunService")
 		local UserInputService = game:GetService("UserInputService")
@@ -591,7 +660,7 @@ local function redeemKey()
 
 			local SheriffName = gunObject.parent.Name
 			showNotification("Sheriff is: "..tostring(SheriffName))
-		
+
 
 		end
 
@@ -790,7 +859,7 @@ local function redeemKey()
 				end
 			end
 		end
-		
+
 		local function startautofarm(state)
 			if state == true then
 				autofarm("start")
@@ -1486,7 +1555,7 @@ local function redeemKey()
 				getState = function() return state end,
 			}
 		end
-		
+
 		local function createbtnRow(labelText)
 			local row = Instance.new("Frame")
 			row.Size = UDim2.new(1, 0, 0, 52)
@@ -1513,7 +1582,7 @@ local function redeemKey()
 			label.Font = Enum.Font.GothamMedium
 			label.TextXAlignment = Enum.TextXAlignment.Left
 			label.Parent = row
-			
+
 			local btn = Instance.new("TextButton")
 			btn.Size = row.Size
 			btn.BackgroundTransparency = 1
@@ -1522,16 +1591,16 @@ local function redeemKey()
 			btn.TextColor3 = Color3.fromRGB(120, 0, 0)
 			btn.TextTransparency = 0
 			btn.Parent = row
-			
+
 			row.MouseEnter:Connect(function()
 				TweenService:Create(rowStroke, TweenInfo.new(0.15), {Transparency = 0.5}):Play()
 			end)
 			row.MouseLeave:Connect(function()
 				TweenService:Create(rowStroke, TweenInfo.new(0.15), {Transparency = 0.85}):Play()
 			end)
-			
+
 			return btn
-			
+
 		end
 
 		--------------------- text input row --------------------------
@@ -1712,6 +1781,15 @@ local function redeemKey()
 		local noclipToggle = createToggleRow("Noclip", false, function(state)
 			if state then startNoclip() else stopNoclip() end
 		end, "NC")
+		
+		local FlingTgl = createToggleRow("(UNSTABLE but works) Walkfling", false, SetFling, "WF")
+		local flingVal = createInputRow("Walkfling Value", "value", 9999, flingstr)
+		local HitboxTgl = createToggleRow("Hitbox", false, SetHitbox, "HB")
+		local HitboxVal = createInputRow("Hitbox Value", "value", 15, HITBOX_SIZE)
+		local HitboxApply = createbtnRow("Apply Hitbox")
+		HitboxApply.MouseButton1Click:Connect(function()
+			HITBOX_SIZE = HitboxVal.get()
+		end)
 
 		local HumSeparator = createSeparatorRow("Humanoid Settings")
 
@@ -1753,141 +1831,133 @@ local function redeemKey()
 		local KillCToggle = createToggleRow("Kill closest as murderer", false, teleportNearest, "KC")
 		local notificationSep = createSeparatorRow("Notifications")
 		local notificationbtn = createbtnRow("Test notifications")
-		
+
 		notificationbtn.MouseButton1Click:Connect(function()
 			showNotification("Failed to fling murderer...")
 		end)
 
-        local flingSep = createSeparatorRow("Walkfling")
-		local FlingTgl = createToggleRow("Walkfling", false, SetFling, "WF')
-		
+			-- ---------- Close button ----------
+			local CloseButton = Instance.new("TextButton")
+			CloseButton.Size = UDim2.new(0, 30, 0, 30)
+			CloseButton.Position = UDim2.new(1, -40, 0, 12)
+			CloseButton.BackgroundTransparency = 1
+			CloseButton.Text = "X"
+			CloseButton.TextColor3 = Color3.fromRGB(200, 190, 190)
+			CloseButton.TextSize = 18
+			CloseButton.Font = Enum.Font.GothamBold
+			CloseButton.Parent = Main
+			CloseButton.ZIndex = 5
 
-
-
-
-
-		-- ---------- Close button ----------
-		local CloseButton = Instance.new("TextButton")
-		CloseButton.Size = UDim2.new(0, 30, 0, 30)
-		CloseButton.Position = UDim2.new(1, -40, 0, 12)
-		CloseButton.BackgroundTransparency = 1
-		CloseButton.Text = "X"
-		CloseButton.TextColor3 = Color3.fromRGB(200, 190, 190)
-		CloseButton.TextSize = 18
-		CloseButton.Font = Enum.Font.GothamBold
-		CloseButton.Parent = Main
-		CloseButton.ZIndex = 5
-
-		CloseButton.MouseEnter:Connect(function()
-			TweenService:Create(CloseButton, TweenInfo.new(0.15), {TextColor3 = ACCENT_LIGHT}):Play()
-		end)
-		CloseButton.MouseLeave:Connect(function()
-			TweenService:Create(CloseButton, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(200, 190, 190)}):Play()
-		end)
-		CloseButton.MouseButton1Click:Connect(function()
-			Main.Visible = false
-		end)
-
-		-- =====================================================
-		--     PERSISTENT MENU BUTTON (open/close hub — mobile)
-		-- =====================================================
-		local MenuButton = Instance.new("TextButton")
-		MenuButton.Size = UDim2.new(0, 46, 0, 46)
-		MenuButton.AnchorPoint = Vector2.new(1, 0.5)
-		MenuButton.Position = UDim2.new(1, -20, 0.5, 0)
-		MenuButton.BackgroundColor3 = ACCENT
-		MenuButton.Text = "="
-		MenuButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-		MenuButton.TextSize = 20
-		MenuButton.Font = Enum.Font.GothamBold
-		MenuButton.Parent = gui
-
-		local MenuButtonCorner = Instance.new("UICorner")
-		MenuButtonCorner.CornerRadius = UDim.new(1, 0)
-		MenuButtonCorner.Parent = MenuButton
-
-		local MenuButtonDragger = Instance.new("UIDragDetector")
-		MenuButtonDragger.Parent = MenuButton
-
-		-- This object has both a dragger AND needs a click -> manual
-		-- distance-based click detection (dragger on the same object eats
-		-- MouseButton1Click otherwise, as covered earlier in this chat).
-		do
-			local CLICK_THRESHOLD = 6
-			local pressStartPos = nil
-			MenuButton.InputBegan:Connect(function(input)
-				if input.UserInputType == Enum.UserInputType.MouseButton1
-					or input.UserInputType == Enum.UserInputType.Touch then
-					pressStartPos = input.Position
-				end
+			CloseButton.MouseEnter:Connect(function()
+				TweenService:Create(CloseButton, TweenInfo.new(0.15), {TextColor3 = ACCENT_LIGHT}):Play()
 			end)
-			MenuButton.InputEnded:Connect(function(input)
-				if not pressStartPos then return end
-				if input.UserInputType == Enum.UserInputType.MouseButton1
-					or input.UserInputType == Enum.UserInputType.Touch then
-					local moved = (input.Position - pressStartPos).Magnitude
-					pressStartPos = nil
-					if moved < CLICK_THRESHOLD then
-						Main.Visible = not Main.Visible
+			CloseButton.MouseLeave:Connect(function()
+				TweenService:Create(CloseButton, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(200, 190, 190)}):Play()
+			end)
+			CloseButton.MouseButton1Click:Connect(function()
+				Main.Visible = false
+			end)
+
+			-- =====================================================
+			--     PERSISTENT MENU BUTTON (open/close hub — mobile)
+			-- =====================================================
+			local MenuButton = Instance.new("TextButton")
+			MenuButton.Size = UDim2.new(0, 46, 0, 46)
+			MenuButton.AnchorPoint = Vector2.new(1, 0.5)
+			MenuButton.Position = UDim2.new(1, -20, 0.5, 0)
+			MenuButton.BackgroundColor3 = ACCENT
+			MenuButton.Text = "="
+			MenuButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+			MenuButton.TextSize = 20
+			MenuButton.Font = Enum.Font.GothamBold
+			MenuButton.Parent = gui
+
+			local MenuButtonCorner = Instance.new("UICorner")
+			MenuButtonCorner.CornerRadius = UDim.new(1, 0)
+			MenuButtonCorner.Parent = MenuButton
+
+			local MenuButtonDragger = Instance.new("UIDragDetector")
+			MenuButtonDragger.Parent = MenuButton
+
+			-- This object has both a dragger AND needs a click -> manual
+			-- distance-based click detection (dragger on the same object eats
+			-- MouseButton1Click otherwise, as covered earlier in this chat).
+			do
+				local CLICK_THRESHOLD = 6
+				local pressStartPos = nil
+				MenuButton.InputBegan:Connect(function(input)
+					if input.UserInputType == Enum.UserInputType.MouseButton1
+						or input.UserInputType == Enum.UserInputType.Touch then
+						pressStartPos = input.Position
 					end
+				end)
+				MenuButton.InputEnded:Connect(function(input)
+					if not pressStartPos then return end
+					if input.UserInputType == Enum.UserInputType.MouseButton1
+						or input.UserInputType == Enum.UserInputType.Touch then
+						local moved = (input.Position - pressStartPos).Magnitude
+						pressStartPos = nil
+						if moved < CLICK_THRESHOLD then
+							Main.Visible = not Main.Visible
+						end
+					end
+				end)
+			end
+
+			-- =====================================================
+			--                      HOTKEYS
+			-- =====================================================
+			UserInputService.InputBegan:Connect(function(input, processed)
+				if processed then return end
+
+				if input.KeyCode == CONFIG.FlyKey then
+					local newState = not flying
+					if newState then startFly() else stopFly() end
+					flyToggle.setState(newState)
+				elseif input.KeyCode == CONFIG.NoclipKey then
+					local newState = not noclipping
+					if newState then startNoclip() else stopNoclip() end
+					noclipToggle.setState(newState)
+				elseif input.KeyCode == CONFIG.ToggleHubKey then
+					Main.Visible = not Main.Visible
 				end
 			end)
-		end
 
-		-- =====================================================
-		--                      HOTKEYS
-		-- =====================================================
-		UserInputService.InputBegan:Connect(function(input, processed)
-			if processed then return end
+			-- =====================================================
+			--                    RESPAWN HANDLING
+			-- =====================================================
+			-- THE bug fix: character/humanoid/rootPart are now actually
+			-- reassigned, defaults recaptured, and every connection rebuilt
+			-- against the NEW Humanoid instead of the destroyed old one.
+			player.CharacterAdded:Connect(function(newChar)
+				character = newChar
+				humanoid = newChar:WaitForChild("Humanoid")
+				rootPart = newChar:WaitForChild("HumanoidRootPart")
+				captureDefaults()
+				connectHumanoidStateSignal()
 
-			if input.KeyCode == CONFIG.FlyKey then
-				local newState = not flying
-				if newState then startFly() else stopFly() end
-				flyToggle.setState(newState)
-			elseif input.KeyCode == CONFIG.NoclipKey then
-				local newState = not noclipping
-				if newState then startNoclip() else stopNoclip() end
-				noclipToggle.setState(newState)
-			elseif input.KeyCode == CONFIG.ToggleHubKey then
-				Main.Visible = not Main.Visible
-			end
-		end)
+				if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
+				if noclipConnection then noclipConnection:Disconnect(); noclipConnection = nil end
 
-		-- =====================================================
-		--                    RESPAWN HANDLING
-		-- =====================================================
-		-- THE bug fix: character/humanoid/rootPart are now actually
-		-- reassigned, defaults recaptured, and every connection rebuilt
-		-- against the NEW Humanoid instead of the destroyed old one.
-		player.CharacterAdded:Connect(function(newChar)
-			character = newChar
-			humanoid = newChar:WaitForChild("Humanoid")
-			rootPart = newChar:WaitForChild("HumanoidRootPart")
-			captureDefaults()
-			connectHumanoidStateSignal()
+				flying, noclipping, speedBoosted, highJumping, speedGlitching, classicForced =
+					false, false, false, false, false, false
 
-			if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
-			if noclipConnection then noclipConnection:Disconnect(); noclipConnection = nil end
+				flyToggle.setState(false)
+				noclipToggle.setState(false)
+				speedToggle.setState(false)
+				glitchToggle.setState(false)
+				jumpToggle.setState(false)
+				jumpPowerToggle.setState(false)
+				-- ESP is left running across respawns on purpose (it watches
+				-- OTHER players, your own death doesn't need to reset it).
+			end)
 
-			flying, noclipping, speedBoosted, highJumping, speedGlitching, classicForced =
-				false, false, false, false, false, false
+			local finalTime = myTimer:Stop()
+			showNotification("Insight Hub loaded in: ".. timet)
 
-			flyToggle.setState(false)
-			noclipToggle.setState(false)
-			speedToggle.setState(false)
-			glitchToggle.setState(false)
-			jumpToggle.setState(false)
-			jumpPowerToggle.setState(false)
-			-- ESP is left running across respawns on purpose (it watches
-			-- OTHER players, your own death doesn't need to reset it).
-		end)
-		
-		local finalTime = myTimer:Stop()
-		showNotification("Insight Hub loaded in: ".. timet)
-		
-		task.wait(0.6)
-		keygui:Destroy()
-		
+			task.wait(0.6)
+			keygui:Destroy()
+
 
 	else
 		Subtitle.Text = "Incorrect key! try again!"
@@ -2015,4 +2085,3 @@ bubble.InputEnded:Connect(function(input)
 		end
 	end
 end)
-
