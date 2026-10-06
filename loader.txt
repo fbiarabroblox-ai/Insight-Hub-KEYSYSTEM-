@@ -1668,6 +1668,10 @@ local function redeemKey()
 			showNotification("Failed to fling murderer...")
 		end)
 
+        local flingSep = createSeparatorRow("Walkfling")
+		local FlingTgl = createToggleRow("Walkfling", false, SetFling, "WF')
+		
+
 
 
 
