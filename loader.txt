@@ -50,21 +50,27 @@ local playerGui = player:WaitForChild("PlayerGui")
 local timer = 0
 local Fling = false
 local flingstr = 99999
-local part = Instance.new("part")
+local model = Instance.new("Model")
+model.Parent = workspace
+
+local part = Instance.new("Part")
 part.Anchored = true
-part.Parent = game.workspace
-part.CFrame = CFrame.new(0,100,0)
+part.CFrame = CFrame.new(0, 100, 0)
+part.Parent = model
 
+-- Первый Highlight (на всю модель)
 local outline = Instance.new("Highlight")
+outline.FillColor = Color3.fromRGB(0, 0, 255)
+outline.OutlineColor = Color3.fromRGB(0, 0, 204)
+outline.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+outline.Parent = model
+
+-- Второй Highlight (на саму деталь)
 local outline1 = Instance.new("Highlight")
-
-outline1.FillColor = Color3.new(0.8, 0, 0)
-outline1.OutlineColor = Color3.new(1, 0, 0)
-outline.FillColor = Color3.new(0, 0, 1)
-outline.OutlineColor = Color3.new(0, 0, 0.8)
-outline.Parent = part
+outline1.FillColor = Color3.fromRGB(204, 0, 0)
+outline1.OutlineColor = Color3.fromRGB(255, 0, 0)
+outline1.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 outline1.Parent = part
-
 
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
