@@ -42,6 +42,96 @@ outline1.OutlineColor = Color3.new(1, 0, 0)
 outline.FillColor = Color3.new(0, 0, 01)
 outline.OutlineColor = Color3.new(0, 0, 01)
 
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local localPlayer = Players.LocalPlayer
+local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+local flingPower = 10000
+local flingConnection = nil
+
+localPlayer.CharacterAdded:Connect(function(newChar)
+	character = newChar
+	hrp = character:WaitForChild("HumanoidRootPart")
+end)
+
+-- Основная функция переключения флинга
+local function SetFling(Fling)
+	if typeof(Fling) ~= "boolean" then return end
+
+	-- Если передали true и флинг ещё не запущен
+	if Fling and not flingConnection then
+		flingConnection = RunService.Heartbeat:Connect(function()
+			if character and hrp then
+				local currentVelocity = hrp.AssemblyLinearVelocity
+				
+				-- Придаем импульс для физического контакта
+				hrp.AssemblyLinearVelocity = Vector3.new(flingPower, flingPower, flingPower)
+				
+				-- Возвращаем исходную скорость до отрисовки кадра
+				RunService.RenderStepped:Wait()
+				if hrp then
+					hrp.AssemblyLinearVelocity = currentVelocity
+				end
+			end
+		end)
+	-- Если передали false — отключаем событие
+	elseif not Fling and flingConnection then
+		flingConnection:Disconnect()
+		flingConnection = nil
+	end
+end
+
+-- Примеры вызова:
+-- SetFling(true)  -- Включить WalkFling
+-- SetFling(false) -- Выключить WalkFling
+
+local Players = game:GetService("Players")
+local localPlayer = Players.LocalPlayer
+
+local HitBoxSize1 = 1
+local HITBOX_SIZE = Vector3.new(HitBoxSize1, HitBoxSize1, HitBoxSize1) -- Желаемый размер хитбокса
+local HITBOX_TRANSPARENCY = 0.7            -- Прозрачность (0 - видимый, 1 - полностью невидимый)
+
+-- Функция для изменения размера HRP у конкретного персонажа
+local function expandHitbox(character)
+	if not character then return end
+	
+	local hrp = character:WaitForChild("HumanoidRootPart", 5)
+	if hrp and character ~= localPlayer.Character then
+		hrp.Size = HITBOX_SIZE
+		hrp.Transparency = HITBOX_TRANSPARENCY
+		hrp.Color = Color3.fromRGB(255, 0, 0) -- Красный цвет для наглядности
+		hrp.Material = Enum.Material.ForceField
+		hrp.CanCollide = false
+	end
+end
+
+-- Обработка игрока
+local function onPlayerAdded(player)
+	if player == localPlayer then return end
+
+	-- Если персонаж уже существует
+	if player.Character then
+		expandHitbox(player.Character)
+	end
+
+	-- При каждом респавне игрока
+	player.CharacterAdded:Connect(function(character)
+		expandHitbox(character)
+	end)
+end
+
+-- Подключаем всех текущих игроков в игре
+for _, player in ipairs(Players:GetPlayers()) do
+	onPlayerAdded(player)
+end
+
+-- Подключаем новых игроков, которые будут заходить
+Players.PlayerAdded:Connect(onPlayerAdded)
+
 
 
 -- Функция вызова уведомления
