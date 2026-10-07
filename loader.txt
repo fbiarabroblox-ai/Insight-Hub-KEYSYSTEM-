@@ -975,16 +975,20 @@ local function redeemKey()
 
 		end
 
-		local function EspToggle(state)
-			task.spawn(function()
-				while state == true do
-					task.wait()
-					Workspace.DescendantAdded:Connect(function(newObject)
-						checkObject(newObject)
-					end)
-				end
-			end)
-		end
+		local espConnection
+
+        local function EspToggle(state)
+        	if espConnection then
+        		espConnection:Disconnect()
+        		espConnection = nil
+        	end
+
+        	if state then
+        		espConnection = Workspace.DescendantAdded:Connect(checkObject)
+        	else
+	        	resetAll()
+        	end
+         end
 
 		-- =====================================================
 		--                      FEATURE STATE
@@ -1997,6 +2001,7 @@ local function redeemKey()
 				jumpPowerToggle.setState(false)
 				-- ESP is left running across respawns on purpose (it watches
 				-- OTHER players, your own death doesn't need to reset it).
+                resetAll()
 			end)
 
 			local finalTime = myTimer:Stop()
