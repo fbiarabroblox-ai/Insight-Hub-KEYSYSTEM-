@@ -737,6 +737,70 @@ local function redeemKey()
     	outline1.Parent = part
      end
 
+
+       -- ------------------------------ AIMBOT ------------------------------
+    local AIM_SMOOTH = 1 -- 1 = мгновенный доворот, меньше = плавнее
+
+    local function toolMatches(char, keywords)
+    	for _, child in ipairs(char:GetChildren()) do
+    		if child:IsA("Tool") then
+	    		local n = child.Name:lower()
+		    	for _, kw in ipairs(keywords) do
+			    	if n:find(kw, 1, true) then return true end
+		    	end
+		    end
+	    end
+    	return false
+     end
+
+     local function isAlive(char)
+    	local hum = char and char:FindFirstChildOfClass("Humanoid")
+    	return hum ~= nil and hum.Health > 0 and char:FindFirstChild("HumanoidRootPart") ~= nil
+     end
+
+    local function getAimTarget()
+    	local myChar = player.Character
+    	if not isAlive(myChar) then return nil end
+    	local myPos = myChar.HumanoidRootPart.Position
+
+    	local onlyKnifeHolders
+    	if toolMatches(myChar, CONFIG.ESP.KnifeKeywords) then
+    		onlyKnifeHolders = false -- у тебя нож: целимся в ближайшего
+    	elseif toolMatches(myChar, CONFIG.ESP.GunKeywords) then
+    		onlyKnifeHolders = true  -- у тебя пистолет: целимся в игрока с ножом
+    	else
+    		return nil
+    	end
+
+    	local best, bestDist = nil, math.huge
+    	for _, plr in ipairs(Players:GetPlayers()) do
+    		if plr ~= player and isAlive(plr.Character) then
+	    		if not onlyKnifeHolders or toolMatches(plr.Character, CONFIG.ESP.KnifeKeywords) then
+		    		local hrp = plr.Character.HumanoidRootPart
+		    		local d = (hrp.Position - myPos).Magnitude
+	    			if d < bestDist then
+			    		best, bestDist = hrp, d
+			    	end
+		    	end
+	    	end
+    	end
+    	return best
+    end
+
+    local function aimStep()
+    	local target = getAimTarget()
+    	if not target then return end
+    	local cam = workspace.CurrentCamera
+    	local goal = CFrame.lookAt(cam.CFrame.Position, target.Position)
+    	cam.CFrame = cam.CFrame:Lerp(goal, AIM_SMOOTH)
+    end
+
+    local function setAimbot(state)
+    	pcall(function() RunService:UnbindFromRenderStep("InsightAimbot") end)
+    	if state then
+    		RunService:BindToRenderStep("InsightAimbot", Enum.RenderPriority.Camera.Value + 1, aimStep)
+    	end
+    end
 		-- ==================== AUTOFARM ====================
 
 		local Workspace = game:GetService("Workspace")
@@ -1878,6 +1942,7 @@ local function redeemKey()
 		local RadioToggle = createToggleRow("Start/Stop Autofarm", false, startautofarm, "AF")
 
 		local ToolsSeparator = createSeparatorRow("Sheriff/Murderer tools")
+        local AimbotToggle = createToggleRow("Aimbot (auto)", false, setAimbot, "AB")
 		local KillAToggle = createToggleRow("Kill all as murderer", false, teleportAllLocally, "KA")
 		local KillCToggle = createToggleRow("Kill closest as murderer", false, teleportNearest, "KC")
 		local notificationSep = createSeparatorRow("Notifications")
