@@ -653,55 +653,89 @@ local function redeemKey()
 		-- ==================== ESP =========================
 
 		local Workspace = game:GetService("Workspace")
-		-- ===================================================
-		-- НАСТРОЙКА ФУНКЦИЙ (Модифицируйте код внутри них)
-		-- ===================================================
-		local SheriffName = nil
-		-- Вызывается, когда найден Gun
-		local function onGunFound(gunObject)
-			print("[Item Finder]: Найдено оружие (Gun):", gunObject:GetFullName())
 
-			if SheriffName == nil then
-				if not gunObject.parent:FindFirstChild("Highlight") then
-					outline.Parent = gunObject.parent
-				end
-			else
-				outline.FillColor = Color3.new(1, 1, 0)
-				outline.OutlineColor = Color3.new(1, 01, 0)
-				outline.Parent = gunObject.parent
-			end
+        local SheriffName = nil
+        local processed = setmetatable({}, {__mode = "k"})
+        local processedParents = {
+	       gun = setmetatable({}, {__mode = "k"}),
+	       knife = setmetatable({}, {__mode = "k"}),
+        }
+        local lastNotify = {}
+        local NOTIFY_COOLDOWN = 3
 
-			local SheriffName = gunObject.parent.Name
-			showNotification("Sheriff is: "..tostring(SheriffName))
+        local function canNotify(key)
+	    local now = tick()
+	    if lastNotify[key] and now - lastNotify[key] < NOTIFY_COOLDOWN then
+		   return false
+	    end
+    	lastNotify[key] = now
+    	   return true
+        end
 
+        local function onGunFound(gunObject)
+	    print("[Item Finder]: Найдено оружие (Gun):", gunObject:GetFullName())
 
-		end
+	    if SheriffName == nil then
+	    	if not gunObject.Parent:FindFirstChild("Highlight") then
+			   outline.Parent = gunObject.Parent
+		    end
+     	else
+		    outline.FillColor = Color3.new(1, 1, 0)
+		    outline.OutlineColor = Color3.new(1, 1, 0)
+		    outline.Parent = gunObject.Parent
+    	end
 
-		-- Вызывается, когда найден Knife
-		local function onKnifeFound(knifeObject)
-			print("[Item Finder]: Найден нож (Knife):", knifeObject:GetFullName())
-			if not knifeObject.parent:FindFirstChild("Highlight") then
-				outline1.Parent = knifeObject.parent
-			end
-			showNotification("Murderer is: ".. tostring(knifeObject.parent.Name))
-		end
+    	SheriffName = gunObject.Parent.Name -- без local
 
-		-- ===================================================
-		-- ЛОГИКА ПОИСКА И ОТСЛЕЖИВАНИЯ
-		-- ===================================================
+    	if canNotify("gun") then
+		   showNotification("Sheriff is: " .. tostring(SheriffName))
+	    end
+    end
 
-		-- Проверка конкретного объекта
-		local function checkObject(object)
-			if object.Name == "Gun" or object.Name == "gun" then
-				onGunFound(object)
-			elseif object.Name == "Knife" or object.Name == "knife" then
-				onKnifeFound(object)
-			end
-		end
+    local function onKnifeFound(knifeObject)
+	    print("[Item Finder]: Найден нож (Knife):", knifeObject:GetFullName())
 
+	    if not knifeObject.Parent:FindFirstChild("Highlight") then
+	    	outline1.Parent = knifeObject.Parent
+    	end
+ 
+    	if canNotify("knife") then
+		    showNotification("Murderer is: " .. tostring(knifeObject.Parent.Name))
+	    end
+    end
 
-		-- 2. Отслеживание новых предметов, которые спавнятся во время игры
+    local function checkObject(object)
+    	if processed[object] then return end
 
+    	local name = object.Name:lower()
+    	if name ~= "gun" and name ~= "knife" then return end
+
+	    local parent = object.Parent
+    	if not parent then return end
+    	if processedParents[name][parent] then return end
+
+    	processed[object] = true
+    	processedParents[name][parent] = true
+
+    	if name == "gun" then
+	    	onGunFound(object)
+    	else
+    		onKnifeFound(object)
+    	end
+    end
+
+    local function resetAll()
+    	processed = setmetatable({}, {__mode = "k"})
+	    processedParents.gun = setmetatable({}, {__mode = "k"})
+	    processedParents.knife = setmetatable({}, {__mode = "k"})
+	    lastNotify = {}
+	    SheriffName = nil
+
+    	outline.FillColor = Color3.fromRGB(0, 0, 255)
+    	outline.OutlineColor = Color3.fromRGB(0, 0, 204)
+    	outline.Parent = model
+    	outline1.Parent = part
+     end
 
 		-- ==================== AUTOFARM ====================
 
