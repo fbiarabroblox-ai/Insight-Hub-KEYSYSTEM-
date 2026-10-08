@@ -75,34 +75,33 @@ outline1.Parent = part
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
 
-local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
-local hrp = char:WaitForChild("HumanoidRootPart")
+local FlingEnabled = false
+local flingstr = 1000
 
-local FlingEnabled = false -- Глобальная (для скрипта) переменная состояния
-local flingstr = 1000      -- Сила флинга
-
--- Функция переключения
 local function SetFling(bool)
 	FlingEnabled = bool
 end
 
-hrp.Touched:Connect(function(hit)
-	-- Проверяем переключатель
-	local pos = hrp.Position
-	if FlingEnabled then
+local function setupCharacter(char)
+	local hrp = char:WaitForChild("HumanoidRootPart")
+	local busy = false
+
+	hrp.Touched:Connect(function(hit)
+		if not FlingEnabled or busy then return end
+
 		local model = hit.Parent
-		if not model then return end
+		if not model or model == char then return end
 
 		local humanoid = model:FindFirstChildOfClass("Humanoid")
+		if not humanoid then return end
 
-		-- Проверяем, что коснулись другого персонажа
-		if humanoid and model ~= char then
-			local targetHrp = model:WaitForChild("HumanoidRootPart")
+		busy = true
+		local pos = hrp.Position
 
-			-- Задаем случайный мощный импульс вращения
-			local randomX = math.random(-20, 20) * flingstr
-			hrp.AssemblyAngularVelocity = Vector3.new(randomX,0,0)
-			task.wait(0.07)
+		hrp.AssemblyAngularVelocity = Vector3.new(math.random(-20, 20) * flingstr, 0, 0)
+		task.wait(0.07)
+
+		if hrp.Parent then
 			hrp.Anchored = true
 			hrp.Position = pos
 			hrp.AssemblyAngularVelocity = Vector3.zero
@@ -110,10 +109,17 @@ hrp.Touched:Connect(function(hit)
 			task.wait(0.02)
 			hrp.Anchored = false
 		end
-	end
-end)
 
--- Пример вызова:
+		busy = false
+	end)
+end
+
+-- Для текущего персонажа и всех будущих (после респауна)
+if localPlayer.Character then
+	task.spawn(setupCharacter, localPlayer.Character)
+end
+localPlayer.CharacterAdded:Connect(setupCharacter)
+
 -- SetFling(true)
 
 local Players = game:GetService("Players")
