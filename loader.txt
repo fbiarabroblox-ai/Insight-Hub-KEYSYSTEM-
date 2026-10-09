@@ -1950,12 +1950,14 @@ local function redeemKey()
 		IDValue.onChange(function()
 			CONFIG.MusicID = IDValue.get()
 		end)
-        local IceBtn = createBtnRow("Morgenshtern - Ice")
-  
+
+        local IceBtn = createbtnRow("Morgenshtern - Ice")
+
         IceBtn.MouseButton1Click:Connect(function()
-			showNotification("Music set to Morgenshtern - Ice")
-            MusicService.SoundId = "rbxassetid://"..MusicIds.morgenstern.Ice
-		end)
+           showNotification("Music set to Morgenshtern - Ice")
+           MusicService.SoundId = "rbxassetid://" .. MusicIds.morgenstern.Ice
+           MusicService:Play()
+        end)
 
 		local AutoSeparator = createSeparatorRow("Autofarm")
 		local RadioToggle = createToggleRow("Start/Stop Autofarm", false, startautofarm, "AF")
