@@ -1955,8 +1955,7 @@ local function redeemKey()
 
         IceBtn.MouseButton1Click:Connect(function()
            showNotification("Music set to Morgenshtern - Ice")
-           MusicService.SoundId = "rbxassetid://" .. MusicIds.morgenstern.Ice
-           MusicService:Play()
+           CONFIG.MusicID = "rbxassetid://" .. MusicIds.morgenstern.Ice
         end)
 
 		local AutoSeparator = createSeparatorRow("Autofarm")
