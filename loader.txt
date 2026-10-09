@@ -1806,6 +1806,7 @@ local function redeemKey()
 				onChange = function(fn)
 					onChangeCallback = fn
 				end,
+                track
 			}
 		end
 
@@ -1955,6 +1956,7 @@ local function redeemKey()
 
         IceBtn.MouseButton1Click:Connect(function()
            showNotification("Music set to Morgenshtern - Ice")
+           IDValue.Text = MusicIds.morgenstern.Ice
            CONFIG.MusicID = "rbxassetid://" .. MusicIds.morgenstern.Ice
         end)
 
