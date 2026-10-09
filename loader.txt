@@ -43,8 +43,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/fbiarabroblox-ai/Insi
 
 
 
--- Теперь обращаемся к значению напрямую:
-print(IDs.Morgenshtern.codilac) -- Выведет: 85300222510224
+
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
