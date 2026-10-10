@@ -28,6 +28,11 @@
 	авто телепорт к пистолету
 	авто шут
 	аимбот
+    (V4.5)
+    -- добавлен АимБот
+    -- улучен флинг
+    -- токенизация ключей
+    
 	-- ЧИТ ВЫХОДИТ ИЗ БЕТЫ на версии 6 -- 
 	что это значит?
 	добавится система ключей (не в тестовом виде)
@@ -39,8 +44,41 @@
 
 ]]
 -- MusicIds API
-loadstring(game:HttpGet("https://raw.githubusercontent.com/fbiarabroblox-ai/Insight-Hub-KEYSYSTEM-/refs/heads/main/MusicIds.lua"))()
+local MusicIds = {
+  morgenstern = {
+    Ice = 126400067778923,
+    Cadillac = 85300222510224,
+  },
+  terranova = 82746224492420,
+  eeparen = 105828916140935,
+  dimok = 135597242252581,
+  Canthld = 127012181396114,
+  MoonlitWonder = 111018848542448,
+  taksabiznesklassa = 102616343336371,
+}
 
+local ALPHABET = "abcdefghijklmnopqrstuvwxyz-"
+
+local function toNumbers(text)
+    local out = {}
+    text = string.lower(text)
+    for i = 1, #text do
+        local n = string.find(ALPHABET, string.sub(text, i, i), 1, true)
+        if not n then return nil end -- запрещённый символ
+        out[#out + 1] = n
+    end
+    return out
+end
+
+local function myHash(text)
+    local nums = toNumbers(text)
+    if not nums then return nil end
+    local h = 7919
+    for i, n in ipairs(nums) do
+        h = (h * 31 + n * i) % 1000000007
+    end
+    return h*32767
+end
 
 
 
@@ -530,7 +568,8 @@ end)
 
 -- ===== Логика редима (замени RemoteEvent/проверку на свою) =====
 local function redeemKey()
-	local key = KeyInput.Text
+	local key = toNumbers(KeyInput.Text)
+	local Hashed = myHash(key)
 
 	if key == "" then
 		Subtitle.Text = "Field can't be empty!"
@@ -543,7 +582,7 @@ local function redeemKey()
 
 	-- TODO: сюда подставь свою реальную проверку ключа
 	-- (запрос к серверу/RemoteFunction, HttpService и т.д.)
-	local isValid = key == "TEST-KEY" -- заглушка для примера
+	local isValid = tostring(Hashed) == tostring(29993662197688)  -- заглушка для примера
 
 	if isValid then
 		Subtitle.Text = "Key valid! loading InsightHub!"
