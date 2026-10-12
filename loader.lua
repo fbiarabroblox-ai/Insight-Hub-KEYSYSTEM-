@@ -57,31 +57,6 @@ local MusicIds = {
   taksabiznesklassa = 102616343336371,
 }
 
-local ALPHABET = "abcdefghijklmnopqrstuvwxyz-"
-
-local function toNumbers(text)
-    local out = {}
-    text = string.lower(text)
-    for i = 1, #text do
-        local n = string.find(ALPHABET, string.sub(text, i, i), 1, true)
-        if not n then return nil end -- запрещённый символ
-        out[#out + 1] = n
-    end
-    return out
-end
-
-local function myHash(text)
-    local nums = toNumbers(text)
-    if not nums then return nil end
-    local h = 7919
-    for i, n in ipairs(nums) do
-        h = (h * 31 + n * i) % 1000000007
-    end
-    return h*32767
-end
-
-
-
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -568,8 +543,7 @@ end)
 
 -- ===== Логика редима (замени RemoteEvent/проверку на свою) =====
 local function redeemKey()
-	local key = toNumbers(KeyInput.Text)
-	local Hashed = myHash(key)
+	local key = KeyInput.Text
 
 	if key == "" then
 		Subtitle.Text = "Field can't be empty!"
@@ -582,7 +556,7 @@ local function redeemKey()
 
 	-- TODO: сюда подставь свою реальную проверку ключа
 	-- (запрос к серверу/RemoteFunction, HttpService и т.д.)
-	local isValid = tostring(Hashed) == tostring(29993662197688)  -- заглушка для примера
+	local isValid = key == "TEST-KEY"  -- заглушка для примера
 
 	if isValid then
 		Subtitle.Text = "Key valid! loading InsightHub!"
