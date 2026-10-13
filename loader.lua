@@ -32,10 +32,11 @@
     -- добавлен АимБот
     -- улучен флинг
     -- токенизация ключей
-	(V4.5.5)
-	-- удалена токенизация ключей
-	-- улучшен walkfling
+	(V4.5.5) 
+	-- удалена токенизация ключей	
+	-- улучшен walkfling 
 	-- добавлен отдельный плеер аудио
+	-- флинг мурда/шерифа
     
 	-- ЧИТ ВЫХОДИТ ИЗ БЕТЫ на версии 6 -- 
 	что это значит?
@@ -61,6 +62,97 @@ local MusicIds = {
 	taksabiznesklassa = 102616343336371,
 }
 
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- Функция для поиска игрока по имени или его части
+local function getPlayerByName(name)
+	name = name:lower()
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			if player.Name:lower():sub(1, #name) == name or player.DisplayName:lower():sub(1, #name) == name then
+				return player
+			end
+		end
+	end
+	return nil
+end
+
+-- Главная функция флинга конкретного игрока
+local function flingTargetPlayer(targetInput)
+	local targetPlayer = typeof(targetInput) == "Instance" and targetInput or getPlayerByName(tostring(targetInput))
+	if not targetPlayer then
+		warn("Игрок не найден!")
+		return
+	end
+
+	local char = LocalPlayer.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local humanoid = char and char:FindFirstChild("Humanoid")
+	if not hrp or not humanoid then return end
+
+	local targetChar = targetPlayer.Character
+	local targetHRP = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+	local targetHumanoid = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
+	if not targetHRP or not targetHumanoid or targetHumanoid.Health <= 0 then
+		warn("У цели нет HRP или она мертва!")
+		return
+	end
+
+	-- 1. Запоминаем исходное место и настройки
+	local originalCFrame = hrp.CFrame
+	local multiplier = flingstr or 200
+
+	-- Защита от стана
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.PlatformStanding, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+
+	-- 2. Запускаем цикл телепортации и флинга на 5 секунд
+	local startTime = os.clock()
+	local connection
+
+	connection = RunService.Heartbeat:Connect(function()
+		-- Проверяем, прошли ли 5 секунд и живы ли оба игрока
+		if os.clock() - startTime >= 5 or not targetHRP.Parent or not hrp.Parent or targetHumanoid.Health <= 0 then
+			connection:Disconnect()
+			return
+		end
+
+		-- Привязываем наш HRP прямо к HRP цели
+		hrp.CFrame = targetHRP.CFrame
+
+		-- Бешеная угловая скорость для отброса
+		hrp.AssemblyAngularVelocity = Vector3.new(
+			math.random(-200, 200) * multiplier,
+			math.random(-200, 200) * multiplier,
+			math.random(-200, 200) * multiplier
+		)
+	end)
+
+	-- Ждем завершения 5 секунд
+	task.wait(5)
+
+	-- 3. Очистка и возврат на исходную позицию
+	if connection and connection.Connected then
+		connection:Disconnect()
+	end
+
+	if hrp and hrp.Parent then
+		-- Гасим скорости
+		hrp.AssemblyAngularVelocity = Vector3.zero
+		hrp.AssemblyLinearVelocity = Vector3.zero
+
+		-- Возвращаем на место, где стоял до флинга
+		hrp.CFrame = originalCFrame
+	end
+
+	if humanoid then
+		humanoid.PlatformStand = false
+	end
+end
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -1302,6 +1394,7 @@ local function redeemKey()
 		local Workspace = game:GetService("Workspace")
 
 		local SheriffName = nil
+		local murdererName = nil
 		local processed = setmetatable({}, {__mode = "k"})
 		local processedParents = {
 			gun = setmetatable({}, {__mode = "k"}),
@@ -1349,6 +1442,7 @@ local function redeemKey()
 			if canNotify("knife") then
 				showNotification("Murderer is: " .. tostring(knifeObject.Parent.Name))
 			end
+			murdererName = knifeObject.Parent.Name
 		end
 
 		local function checkObject(object)
@@ -2546,7 +2640,15 @@ local function redeemKey()
 		end, "NC")
 
 		local FlingTgl = createToggleRow("(UNSTABLE but works) Walkfling", false, SetFling, "WF")
-		local flingVal = createInputRow("Walkfling Value", "value", 9999, flingstr)
+		local FlingMurd = createbtnRow("Fling murderer")
+		FlingMurd.MouseButton1Click:Connect(function()
+			flingTargetPlayer(murdererName)
+		end)
+		local FlingSheriff = createbtnRow("Fling sheriff")
+		FlingSheriff.MouseButton1Click:Connect(function()
+			flingTargetPlayer(SheriffName)
+		end)
+		local flingVal = createInputRow("Fling Strength", "value", 9999, flingstr)
 		local HitboxTgl = createToggleRow("Hitbox", false, SetHitbox, "HB")
 		local HitboxVal = createInputRow("Hitbox Value", "value", 15, HITBOX_SIZE)
 		local HitboxApply = createbtnRow("Apply Hitbox")
