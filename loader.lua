@@ -32,6 +32,10 @@
     -- добавлен АимБот
     -- улучен флинг
     -- токенизация ключей
+	(V4.5.5)
+	-- удалена токенизация ключей
+	-- улучшен walkfling
+	-- добавлен отдельный плеер аудио
     
 	-- ЧИТ ВЫХОДИТ ИЗ БЕТЫ на версии 6 -- 
 	что это значит?
@@ -45,17 +49,604 @@
 ]]
 -- MusicIds API
 local MusicIds = {
-  morgenstern = {
-    Ice = 126400067778923,
-    Cadillac = 85300222510224,
-  },
-  terranova = 82746224492420,
-  eeparen = 105828916140935,
-  dimok = 135597242252581,
-  Canthld = 127012181396114,
-  MoonlitWonder = 111018848542448,
-  taksabiznesklassa = 102616343336371,
+	morgenstern = {
+		Ice = 126400067778923,
+		Cadillac = 85300222510224,
+	},
+	terranova = 82746224492420,
+	eeparen = 105828916140935,
+	dimok = 135597242252581,
+	Canthld = 127012181396114,
+	MoonlitWonder = 111018848542448,
+	taksabiznesklassa = 102616343336371,
 }
+
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
+
+local initialized = false -- защита от повторной инициализации
+
+local function Initplayergui()
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	-- Только один запуск: ни повторный вызов, ни дубль GUI невозможны
+	if initialized or playerGui:FindFirstChild("MusicPlayer") then
+		return
+	end
+	initialized = true
+
+	local ACCENT = Color3.fromRGB(220, 50, 70) -- поставь свой акцент
+
+	local MusicIds = {
+		morgenstern = {
+			Ice = 126400067778923,
+			Cadillac = 85300222510224,
+		},
+		terranova = 82746224492420,
+		eeparen = 105828916140935,
+		dimok = 135597242252581,
+		Canthld = 127012181396114,
+		MoonlitWonder = 111018848542448,
+		taksabiznesklassa = 102616343336371,
+	}
+
+	-- Все подключения собираем, чтобы корректно отключить при удалении GUI
+	local conns = {}
+	local function bind(signal, fn)
+		local c = signal:Connect(fn)
+		table.insert(conns, c)
+		return c
+	end
+
+	-- Хелперы ввода (мышь + мультитач: каждый палец отслеживается отдельно)
+	local function isPress(i)
+		return i.UserInputType == Enum.UserInputType.MouseButton1
+			or i.UserInputType == Enum.UserInputType.Touch
+	end
+	local function isMove(i, active)
+		return active ~= nil and (i == active
+			or (active.UserInputType == Enum.UserInputType.MouseButton1
+				and i.UserInputType == Enum.UserInputType.MouseMovement))
+	end
+	local function isRelease(i, active)
+		return active ~= nil and (i == active
+			or (active.UserInputType == Enum.UserInputType.MouseButton1
+				and i.UserInputType == Enum.UserInputType.MouseButton1))
+	end
+
+	-- ========== Плейлист из базы ==========
+	local playlist = {}
+
+	local function capitalize(s)
+		return s:sub(1, 1):upper() .. s:sub(2)
+	end
+
+	local function addEntries(name, value)
+		if type(value) == "number" then
+			table.insert(playlist, { name = name, id = value })
+		elseif type(value) == "table" then
+			local keys = {}
+			for k in pairs(value) do table.insert(keys, k) end
+			table.sort(keys)
+			for _, k in ipairs(keys) do
+				addEntries(name .. " - " .. k, value[k])
+			end
+		end
+	end
+
+	do
+		local keys = {}
+		for k in pairs(MusicIds) do table.insert(keys, k) end
+		table.sort(keys)
+		for _, k in ipairs(keys) do
+			addEntries(capitalize(k), MusicIds[k])
+		end
+	end
+
+	-- ========== Звук ==========
+	local sound = Instance.new("Sound")
+	sound.Name = "MusicPlayerSound"
+	sound.Volume = 0.6
+	sound.Looped = false
+	sound.Parent = SoundService
+
+	local currentIndex = 0
+	local shuffle = false
+	local repeatOne = false
+
+	-- ========== GUI ==========
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "MusicPlayer"
+	gui.ResetOnSpawn = false
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	gui.IgnoreGuiInset = true
+	gui.ScreenInsets = Enum.ScreenInsets.None -- координаты GUI = координаты ввода
+	gui.Parent = playerGui
+
+	local WIN_W, WIN_H, HEADER_H = 340, 470, 44
+	local MARGIN = 12 -- отступ от краёв экрана
+
+	local collapsed = false
+	local posX, posY -- позиция окна в долях экрана (верх-центр окна)
+
+	local window = Instance.new("Frame")
+	window.AnchorPoint = Vector2.new(0.5, 0)
+	window.Size = UDim2.new(0, WIN_W, 0, WIN_H)
+	window.BackgroundColor3 = Color3.fromRGB(21, 17, 18)
+	window.ClipsDescendants = true
+	window.Parent = gui
+
+	local uiScale = Instance.new("UIScale")
+	uiScale.Parent = window
+
+	Instance.new("UICorner", window).CornerRadius = UDim.new(0, 11)
+
+	local winStroke = Instance.new("UIStroke")
+	winStroke.Color = ACCENT
+	winStroke.Transparency = 0.7
+	winStroke.Thickness = 1
+	winStroke.Parent = window
+
+	-- ========== Адаптация под экран ==========
+	local function clampPos(isCollapsed)
+		local g = gui.AbsoluteSize
+		if g.X <= 0 or g.Y <= 0 then return end
+		local w = WIN_W * uiScale.Scale
+		local h = (isCollapsed and HEADER_H or WIN_H) * uiScale.Scale
+
+		local minX = (MARGIN + w / 2) / g.X
+		local maxX = 1 - minX
+		if minX > maxX then
+			posX = 0.5
+		else
+			posX = math.clamp(posX, minX, maxX)
+		end
+
+		local minY = MARGIN / g.Y
+		local maxY = math.max(minY, (g.Y - MARGIN - h) / g.Y)
+		posY = math.clamp(posY, minY, maxY)
+	end
+
+	local function applyPos()
+		window.Position = UDim2.fromScale(posX, posY)
+	end
+
+	local function updateLayout()
+		local g = gui.AbsoluteSize
+		if g.X <= 0 or g.Y <= 0 then return end
+
+		local s = math.min(1, (g.X - MARGIN * 2) / WIN_W, (g.Y - MARGIN * 2) / WIN_H)
+		uiScale.Scale = math.max(s, 0.45)
+
+		if not posX then
+			-- первое размещение: слева на широких экранах, по центру на узких
+			local w = WIN_W * uiScale.Scale
+			local h = WIN_H * uiScale.Scale
+			posX = (g.X > w * 2.2) and ((40 + w / 2) / g.X) or 0.5
+			posY = math.max(MARGIN, (g.Y - h) / 2) / g.Y
+		end
+
+		clampPos(collapsed)
+		applyPos()
+	end
+
+	bind(gui:GetPropertyChangedSignal("AbsoluteSize"), updateLayout)
+	updateLayout()
+
+	-- Заголовок (им же двигаем окно)
+	local header = Instance.new("Frame")
+	header.Size = UDim2.new(1, 0, 0, HEADER_H)
+	header.BackgroundColor3 = Color3.fromRGB(30, 24, 25)
+	header.BorderSizePixel = 0
+	header.Parent = window
+
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1, -60, 1, 0)
+	title.Position = UDim2.new(0, 18, 0, 0)
+	title.BackgroundTransparency = 1
+	title.Text = "Music Player"
+	title.TextColor3 = Color3.fromRGB(235, 225, 225)
+	title.TextSize = 15
+	title.Font = Enum.Font.GothamBold
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Parent = header
+
+	local minBtn = Instance.new("TextButton")
+	minBtn.Size = UDim2.new(0, 28, 0, 28)
+	minBtn.AnchorPoint = Vector2.new(1, 0.5)
+	minBtn.Position = UDim2.new(1, -10, 0.5, 0)
+	minBtn.BackgroundColor3 = Color3.fromRGB(45, 38, 39)
+	minBtn.AutoButtonColor = false
+	minBtn.Text = "–"
+	minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	minBtn.TextSize = 16
+	minBtn.Font = Enum.Font.GothamBold
+	minBtn.Parent = header
+	Instance.new("UICorner", minBtn).CornerRadius = UDim.new(1, 0)
+
+	-- Перетаскивание окна (в долях экрана, работает с любым масштабом)
+	do
+		local active, dragStart, startX, startY
+		bind(header.InputBegan, function(input)
+			if not active and isPress(input) then
+				active = input
+				dragStart = input.Position
+				startX, startY = posX, posY
+			end
+		end)
+		bind(UserInputService.InputChanged, function(input)
+			if isMove(input, active) then
+				local g = gui.AbsoluteSize
+				local d = input.Position - dragStart
+				posX = startX + d.X / g.X
+				posY = startY + d.Y / g.Y
+				clampPos(collapsed)
+				applyPos()
+			end
+		end)
+		bind(UserInputService.InputEnded, function(input)
+			if isRelease(input, active) then
+				active = nil
+			end
+		end)
+	end
+
+	-- Сворачивание
+	bind(minBtn.MouseButton1Click, function()
+		collapsed = not collapsed
+		minBtn.Text = collapsed and "+" or "–"
+		clampPos(collapsed) -- при разворачивании окно не уйдёт за нижний край
+		TweenService:Create(window, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+			Size = UDim2.new(0, WIN_W, 0, collapsed and HEADER_H or WIN_H),
+			Position = UDim2.fromScale(posX, posY),
+		}):Play()
+	end)
+
+	-- Название трека
+	local nowPlaying = Instance.new("TextLabel")
+	nowPlaying.Size = UDim2.new(1, -36, 0, 24)
+	nowPlaying.Position = UDim2.new(0, 18, 0, HEADER_H + 12)
+	nowPlaying.BackgroundTransparency = 1
+	nowPlaying.Text = "Выбери трек"
+	nowPlaying.TextColor3 = Color3.fromRGB(235, 225, 225)
+	nowPlaying.TextSize = 16
+	nowPlaying.Font = Enum.Font.GothamBold
+	nowPlaying.TextXAlignment = Enum.TextXAlignment.Left
+	nowPlaying.TextTruncate = Enum.TextTruncate.AtEnd
+	nowPlaying.Parent = window
+
+	-- ========== Слайдер ==========
+	local function createSlider(parent, position, size, initial, onChange)
+		local hit = Instance.new("TextButton")
+		hit.Size = size
+		hit.Position = position
+		hit.BackgroundTransparency = 1
+		hit.Text = ""
+		hit.AutoButtonColor = false
+		hit.Parent = parent
+
+		local track = Instance.new("Frame")
+		track.Size = UDim2.new(1, 0, 0, 6)
+		track.AnchorPoint = Vector2.new(0, 0.5)
+		track.Position = UDim2.new(0, 0, 0.5, 0)
+		track.BackgroundColor3 = Color3.fromRGB(45, 38, 39)
+		track.Parent = hit
+		Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+
+		local fill = Instance.new("Frame")
+		fill.Size = UDim2.new(initial, 0, 1, 0)
+		fill.BackgroundColor3 = ACCENT
+		fill.Parent = track
+		Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+
+		local knob = Instance.new("Frame")
+		knob.Size = UDim2.new(0, 14, 0, 14)
+		knob.AnchorPoint = Vector2.new(0.5, 0.5)
+		knob.Position = UDim2.new(initial, 0, 0.5, 0)
+		knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		knob.Parent = track
+		Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+		local active = nil
+		local api = {}
+
+		function api.Set(rel)
+			rel = math.clamp(rel, 0, 1)
+			fill.Size = UDim2.new(rel, 0, 1, 0)
+			knob.Position = UDim2.new(rel, 0, 0.5, 0)
+		end
+
+		function api.IsDragging()
+			return active ~= nil
+		end
+
+		local function update(x, final)
+			local w = math.max(track.AbsoluteSize.X, 1)
+			local rel = math.clamp((x - track.AbsolutePosition.X) / w, 0, 1)
+			api.Set(rel)
+			onChange(rel, final)
+		end
+
+		bind(hit.InputBegan, function(input)
+			if not active and isPress(input) then
+				active = input
+				update(input.Position.X, false)
+			end
+		end)
+		bind(UserInputService.InputChanged, function(input)
+			if isMove(input, active) then
+				update(input.Position.X, false)
+			end
+		end)
+		bind(UserInputService.InputEnded, function(input)
+			if isRelease(input, active) then
+				local x = input.Position.X
+				active = nil
+				update(x, true)
+			end
+		end)
+
+		return api
+	end
+
+	-- Прогресс трека
+	local seekSlider = createSlider(
+		window,
+		UDim2.new(0, 18, 0, HEADER_H + 44),
+		UDim2.new(1, -36, 0, 24), -- чуть выше зона касания для телефонов
+		0,
+		function(rel, final)
+			if final and sound.TimeLength > 0 then
+				sound.TimePosition = rel * sound.TimeLength
+			end
+		end
+	)
+
+	local function formatTime(t)
+		t = math.max(0, math.floor(t))
+		return string.format("%d:%02d", t // 60, t % 60)
+	end
+
+	local timeLeft = Instance.new("TextLabel")
+	timeLeft.Size = UDim2.new(0, 60, 0, 16)
+	timeLeft.Position = UDim2.new(0, 18, 0, HEADER_H + 66)
+	timeLeft.BackgroundTransparency = 1
+	timeLeft.Text = "0:00"
+	timeLeft.TextColor3 = Color3.fromRGB(160, 150, 150)
+	timeLeft.TextSize = 12
+	timeLeft.Font = Enum.Font.GothamMedium
+	timeLeft.TextXAlignment = Enum.TextXAlignment.Left
+	timeLeft.Parent = window
+
+	local timeRight = timeLeft:Clone()
+	timeRight.AnchorPoint = Vector2.new(1, 0)
+	timeRight.Position = UDim2.new(1, -18, 0, HEADER_H + 66)
+	timeRight.TextXAlignment = Enum.TextXAlignment.Right
+	timeRight.Parent = window
+
+	-- ========== Кнопки управления ==========
+	local controls = Instance.new("Frame")
+	controls.Size = UDim2.new(1, -36, 0, 46)
+	controls.Position = UDim2.new(0, 18, 0, HEADER_H + 90)
+	controls.BackgroundTransparency = 1
+	controls.Parent = window
+
+	local controlsLayout = Instance.new("UIListLayout")
+	controlsLayout.FillDirection = Enum.FillDirection.Horizontal
+	controlsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	controlsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	controlsLayout.Padding = UDim.new(0, 10)
+	controlsLayout.Parent = controls
+
+	local function createCircleButton(text, size, order)
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(0, size, 0, size)
+		btn.BackgroundColor3 = Color3.fromRGB(30, 24, 25)
+		btn.AutoButtonColor = false
+		btn.Text = text
+		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		btn.TextSize = size > 40 and 16 or 12
+		btn.Font = Enum.Font.GothamBold
+		btn.LayoutOrder = order
+		btn.Parent = controls
+		Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = ACCENT
+		stroke.Transparency = 0.4
+		stroke.Thickness = 1.5
+		stroke.Parent = btn
+
+		return btn
+	end
+
+	local shuffleBtn = createCircleButton("SH", 34, 1)
+	local prevBtn = createCircleButton("◀◀", 40, 2)
+	local playBtn = createCircleButton("▶", 46, 3)
+	local nextBtn = createCircleButton("▶▶", 40, 4)
+	local repeatBtn = createCircleButton("R1", 34, 5)
+
+	playBtn.BackgroundColor3 = ACCENT
+
+	local function setToggleLook(btn, on)
+		TweenService:Create(btn, TweenInfo.new(0.15), {
+			BackgroundColor3 = on and ACCENT or Color3.fromRGB(30, 24, 25),
+		}):Play()
+	end
+
+	-- ========== Громкость ==========
+	local volIcon = Instance.new("TextLabel")
+	volIcon.Size = UDim2.new(0, 30, 0, 24)
+	volIcon.Position = UDim2.new(0, 18, 0, HEADER_H + 146)
+	volIcon.BackgroundTransparency = 1
+	volIcon.Text = "VOL"
+	volIcon.TextColor3 = Color3.fromRGB(160, 150, 150)
+	volIcon.TextSize = 12
+	volIcon.Font = Enum.Font.GothamBold
+	volIcon.TextXAlignment = Enum.TextXAlignment.Left
+	volIcon.Parent = window
+
+	createSlider(
+		window,
+		UDim2.new(0, 56, 0, HEADER_H + 146),
+		UDim2.new(1, -74, 0, 24),
+		sound.Volume,
+		function(rel)
+			sound.Volume = rel
+		end
+	)
+
+	-- ========== Список треков ==========
+	local listFrame = Instance.new("ScrollingFrame")
+	listFrame.Size = UDim2.new(1, -28, 1, -(HEADER_H + 184) - 10)
+	listFrame.Position = UDim2.new(0, 14, 0, HEADER_H + 180)
+	listFrame.BackgroundTransparency = 1
+	listFrame.BorderSizePixel = 0
+	listFrame.ScrollBarThickness = 3
+	listFrame.ScrollBarImageColor3 = ACCENT
+	listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+	listFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	listFrame.ScrollingDirection = Enum.ScrollingDirection.Y
+	listFrame.Parent = window
+
+	local listLayout = Instance.new("UIListLayout")
+	listLayout.Padding = UDim.new(0, 5)
+	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	listLayout.Parent = listFrame
+
+	local trackButtons = {}
+
+	local function refreshList()
+		for i, btn in ipairs(trackButtons) do
+			local isActive = (i == currentIndex)
+			TweenService:Create(btn, TweenInfo.new(0.15), {
+				BackgroundColor3 = isActive and ACCENT or Color3.fromRGB(30, 24, 25),
+			}):Play()
+		end
+	end
+
+	local function playTrack(index)
+		local data = playlist[index]
+		if not data then return end
+		currentIndex = index
+		sound:Stop()
+		sound.SoundId = "rbxassetid://" .. data.id
+		sound.TimePosition = 0
+		sound:Play()
+		nowPlaying.Text = data.name
+		playBtn.Text = "❚❚"
+		refreshList()
+	end
+
+	local function nextTrack()
+		if #playlist == 0 then return end
+		local nextIndex
+		if shuffle and #playlist > 1 then
+			repeat nextIndex = math.random(1, #playlist) until nextIndex ~= currentIndex
+		else
+			nextIndex = (currentIndex % #playlist) + 1
+		end
+		playTrack(nextIndex)
+	end
+
+	local function prevTrack()
+		if #playlist == 0 then return end
+		-- если трек играет больше 3 сек, то перематываем в начало
+		if sound.TimePosition > 3 then
+			sound.TimePosition = 0
+			return
+		end
+		local prevIndex = currentIndex - 1
+		if prevIndex < 1 then prevIndex = #playlist end
+		playTrack(prevIndex)
+	end
+
+	for i, data in ipairs(playlist) do
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, -6, 0, 38)
+		btn.BackgroundColor3 = Color3.fromRGB(30, 24, 25)
+		btn.AutoButtonColor = false
+		btn.Text = "  " .. data.name
+		btn.TextColor3 = Color3.fromRGB(235, 225, 225)
+		btn.TextSize = 14
+		btn.Font = Enum.Font.GothamMedium
+		btn.TextXAlignment = Enum.TextXAlignment.Left
+		btn.TextTruncate = Enum.TextTruncate.AtEnd
+		btn.LayoutOrder = i
+		btn.Parent = listFrame
+		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+		btn.MouseButton1Click:Connect(function()
+			playTrack(i)
+		end)
+
+		trackButtons[i] = btn
+	end
+
+	-- ========== Логика кнопок ==========
+	playBtn.MouseButton1Click:Connect(function()
+		if currentIndex == 0 then
+			playTrack(1)
+		elseif sound.IsPlaying then
+			sound:Pause()
+			playBtn.Text = "▶"
+		else
+			sound:Resume()
+			playBtn.Text = "❚❚"
+		end
+	end)
+
+	nextBtn.MouseButton1Click:Connect(nextTrack)
+	prevBtn.MouseButton1Click:Connect(prevTrack)
+
+	shuffleBtn.MouseButton1Click:Connect(function()
+		shuffle = not shuffle
+		setToggleLook(shuffleBtn, shuffle)
+	end)
+
+	repeatBtn.MouseButton1Click:Connect(function()
+		repeatOne = not repeatOne
+		setToggleLook(repeatBtn, repeatOne)
+	end)
+
+	sound.Ended:Connect(function()
+		if repeatOne then
+			playTrack(currentIndex)
+		else
+			nextTrack()
+		end
+	end)
+
+	-- Обновление прогресса
+	bind(RunService.RenderStepped, function()
+		local len = sound.TimeLength
+		if len > 0 then
+			if not seekSlider.IsDragging() then
+				seekSlider.Set(sound.TimePosition / len)
+			end
+			timeLeft.Text = formatTime(sound.TimePosition)
+			timeRight.Text = formatTime(len)
+		else
+			timeLeft.Text = "0:00"
+			timeRight.Text = "0:00"
+		end
+	end)
+
+	-- ========== Очистка при удалении GUI ==========
+	gui.Destroying:Connect(function()
+		for _, c in ipairs(conns) do
+			c:Disconnect()
+		end
+		table.clear(conns)
+		sound:Destroy()
+		initialized = false -- после удаления GUI можно создать плеер заново
+	end)
+end
+
 
 
 local Players = game:GetService("Players")
@@ -103,7 +694,13 @@ end
 
 local function setupCharacter(char)
 	local hrp = char:WaitForChild("HumanoidRootPart")
+	local humanoid = char:WaitForChild("Humanoid")
 	local busy = false
+
+	-- Отключаем состояния падений
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.PlatformStanding, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 
 	hrp.Touched:Connect(function(hit)
 		if not FlingEnabled or busy then return end
@@ -111,28 +708,53 @@ local function setupCharacter(char)
 		local model = hit.Parent
 		if not model or model == char then return end
 
-		local humanoid = model:FindFirstChildOfClass("Humanoid")
-		if not humanoid then return end
+		local targetHumanoid = model:FindFirstChildOfClass("Humanoid")
+		if not targetHumanoid or targetHumanoid.Health <= 0 then return end
+
+		local targetHRP = model:FindFirstChild("HumanoidRootPart") or hit
+		if not targetHRP:IsA("BasePart") then return end
 
 		busy = true
-		local pos = hrp.Position
 
-		hrp.AssemblyAngularVelocity = Vector3.new(math.random(-20, 20) * flingstr, 0, 0)
-		task.wait(0.07)
+		-- Фиксируем позицию, чтобы нас не сдвинуло и не застанило
+		local savedCFrame = hrp.CFrame
+		local oldVel = hrp.AssemblyLinearVelocity
+		local multiplier = flingstr or 150
 
-		if hrp.Parent then
-			hrp.Anchored = true
-			hrp.Position = pos
+		-- Мощный BodyVelocity для удержания на месте
+		local bodyVelocity = Instance.new("BodyVelocity")
+		bodyVelocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+		bodyVelocity.Velocity = Vector3.zero
+		bodyVelocity.Parent = hrp
+
+		-- Раскрутка для флинга цели
+		hrp.AssemblyAngularVelocity = Vector3.new(
+			0,
+			math.random(-200, 200) * multiplier,
+			0
+		)
+
+		task.wait(0.04)
+
+		-- Жесткий сброс всего мусора после удара и возврат на позицию
+		if hrp and hrp.Parent then
 			hrp.AssemblyAngularVelocity = Vector3.zero
-			hrp.AssemblyLinearVelocity = Vector3.zero
-			task.wait(0.02)
-			hrp.Anchored = false
+			hrp.AssemblyLinearVelocity = oldVel
+			hrp.CFrame = savedCFrame -- Возвращаем точные координаты, отменяя микро-сдвиг
 		end
 
+		if bodyVelocity then
+			bodyVelocity:Destroy()
+		end
+
+		-- Главный трюк от стана: кратковременный сброс платформ/прыжков через обнуление векторов 
+		-- и принудительное включение ходьбы без кривого ChangeState
+		humanoid.PlatformStand = false
+
+		task.wait(0.08)
 		busy = false
 	end)
 end
-
 -- Для текущего персонажа и всех будущих (после респауна)
 if localPlayer.Character then
 	task.spawn(setupCharacter, localPlayer.Character)
@@ -679,91 +1301,91 @@ local function redeemKey()
 
 		local Workspace = game:GetService("Workspace")
 
-        local SheriffName = nil
-        local processed = setmetatable({}, {__mode = "k"})
-        local processedParents = {
-	       gun = setmetatable({}, {__mode = "k"}),
-	       knife = setmetatable({}, {__mode = "k"}),
-        }
-        local lastNotify = {}
-        local NOTIFY_COOLDOWN = 3
+		local SheriffName = nil
+		local processed = setmetatable({}, {__mode = "k"})
+		local processedParents = {
+			gun = setmetatable({}, {__mode = "k"}),
+			knife = setmetatable({}, {__mode = "k"}),
+		}
+		local lastNotify = {}
+		local NOTIFY_COOLDOWN = 3
 
-        local function canNotify(key)
-	    local now = tick()
-	    if lastNotify[key] and now - lastNotify[key] < NOTIFY_COOLDOWN then
-		   return false
-	    end
-    	lastNotify[key] = now
-    	   return true
-        end
+		local function canNotify(key)
+			local now = tick()
+			if lastNotify[key] and now - lastNotify[key] < NOTIFY_COOLDOWN then
+				return false
+			end
+			lastNotify[key] = now
+			return true
+		end
 
-        local function onGunFound(gunObject)
-	    print("[Item Finder]: Найдено оружие (Gun):", gunObject:GetFullName())
+		local function onGunFound(gunObject)
+			print("[Item Finder]: Найдено оружие (Gun):", gunObject:GetFullName())
 
-	    if SheriffName == nil then
-	    	if not gunObject.Parent:FindFirstChild("Highlight") then
-			   outline.Parent = gunObject.Parent
-		    end
-     	else
-		    outline.FillColor = Color3.new(1, 1, 0)
-		    outline.OutlineColor = Color3.new(1, 1, 0)
-		    outline.Parent = gunObject.Parent
-    	end
+			if SheriffName == nil then
+				if not gunObject.Parent:FindFirstChild("Highlight") then
+					outline.Parent = gunObject.Parent
+				end
+			else
+				outline.FillColor = Color3.new(1, 1, 0)
+				outline.OutlineColor = Color3.new(1, 1, 0)
+				outline.Parent = gunObject.Parent
+			end
 
-    	SheriffName = gunObject.Parent.Name -- без local
+			SheriffName = gunObject.Parent.Name -- без local
 
-    	if canNotify("gun") then
-		   showNotification("Sheriff is: " .. tostring(SheriffName))
-	    end
-    end
+			if canNotify("gun") then
+				showNotification("Sheriff is: " .. tostring(SheriffName))
+			end
+		end
 
-    local function onKnifeFound(knifeObject)
-	    print("[Item Finder]: Найден нож (Knife):", knifeObject:GetFullName())
+		local function onKnifeFound(knifeObject)
+			print("[Item Finder]: Найден нож (Knife):", knifeObject:GetFullName())
 
-	    if not knifeObject.Parent:FindFirstChild("Highlight") then
-	    	outline1.Parent = knifeObject.Parent
-    	end
- 
-    	if canNotify("knife") then
-		    showNotification("Murderer is: " .. tostring(knifeObject.Parent.Name))
-	    end
-    end
+			if not knifeObject.Parent:FindFirstChild("Highlight") then
+				outline1.Parent = knifeObject.Parent
+			end
 
-    local function checkObject(object)
-    	if processed[object] then return end
+			if canNotify("knife") then
+				showNotification("Murderer is: " .. tostring(knifeObject.Parent.Name))
+			end
+		end
 
-    	local name = object.Name:lower()
-    	if name ~= "gun" and name ~= "knife" then return end
+		local function checkObject(object)
+			if processed[object] then return end
 
-	    local parent = object.Parent
-    	if not parent then return end
-    	if processedParents[name][parent] then return end
+			local name = object.Name:lower()
+			if name ~= "gun" and name ~= "knife" then return end
 
-    	processed[object] = true
-    	processedParents[name][parent] = true
+			local parent = object.Parent
+			if not parent then return end
+			if processedParents[name][parent] then return end
 
-    	if name == "gun" then
-	    	onGunFound(object)
-    	else
-    		onKnifeFound(object)
-    	end
-    end
+			processed[object] = true
+			processedParents[name][parent] = true
 
-    local function resetAll()
-    	processed = setmetatable({}, {__mode = "k"})
-	    processedParents.gun = setmetatable({}, {__mode = "k"})
-	    processedParents.knife = setmetatable({}, {__mode = "k"})
-	    lastNotify = {}
-	    SheriffName = nil
+			if name == "gun" then
+				onGunFound(object)
+			else
+				onKnifeFound(object)
+			end
+		end
 
-    	outline.FillColor = Color3.fromRGB(0, 0, 255)
-    	outline.OutlineColor = Color3.fromRGB(0, 0, 204)
-    	outline.Parent = model
-    	outline1.Parent = part
-     end
+		local function resetAll()
+			processed = setmetatable({}, {__mode = "k"})
+			processedParents.gun = setmetatable({}, {__mode = "k"})
+			processedParents.knife = setmetatable({}, {__mode = "k"})
+			lastNotify = {}
+			SheriffName = nil
+
+			outline.FillColor = Color3.fromRGB(0, 0, 255)
+			outline.OutlineColor = Color3.fromRGB(0, 0, 204)
+			outline.Parent = model
+			outline1.Parent = part
+		end
 
 
-       
+
 		-- ==================== AUTOFARM ====================
 
 		local Workspace = game:GetService("Workspace")
@@ -1004,18 +1626,18 @@ local function redeemKey()
 
 		local espConnection
 
-        local function EspToggle(state)
-        	if espConnection then
-        		espConnection:Disconnect()
-        		espConnection = nil
-        	end
+		local function EspToggle(state)
+			if espConnection then
+				espConnection:Disconnect()
+				espConnection = nil
+			end
 
-        	if state then
-        		espConnection = Workspace.DescendantAdded:Connect(checkObject)
-        	else
-	        	resetAll()
-        	end
-         end
+			if state then
+				espConnection = Workspace.DescendantAdded:Connect(checkObject)
+			else
+				resetAll()
+			end
+		end
 
 		-- =====================================================
 		--                      FEATURE STATE
@@ -1243,69 +1865,69 @@ local function redeemKey()
 				targetHrp.CFrame = myHrp.CFrame * CFrame.new(0, 0, -3)
 			end
 		end
--- ------------------------------ AIMBOT ------------------------------
-        local AIM_SMOOTH = 1 -- 1 = мгновенный доворот, меньше = плавнее
+		-- ------------------------------ AIMBOT ------------------------------
+		local AIM_SMOOTH = 1 -- 1 = мгновенный доворот, меньше = плавнее
 
-        local function toolMatches(char, keywords)
-        	for _, child in ipairs(char:GetChildren()) do
-        		if child:IsA("Tool") then
-	        		local n = child.Name:lower()
-		        	for _, kw in ipairs(keywords) do
-	    		    	if n:find(kw, 1, true) then return true end
-    		    	end
-    		    end
-    	    end
-        	return false
-         end
+		local function toolMatches(char, keywords)
+			for _, child in ipairs(char:GetChildren()) do
+				if child:IsA("Tool") then
+					local n = child.Name:lower()
+					for _, kw in ipairs(keywords) do
+						if n:find(kw, 1, true) then return true end
+					end
+				end
+			end
+			return false
+		end
 
-         local function isAlive(char)
-        	local hum = char and char:FindFirstChildOfClass("Humanoid")
-        	return hum ~= nil and hum.Health > 0 and char:FindFirstChild("HumanoidRootPart") ~= nil
-         end
+		local function isAlive(char)
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			return hum ~= nil and hum.Health > 0 and char:FindFirstChild("HumanoidRootPart") ~= nil
+		end
 
-        local function getAimTarget()
-        	local myChar = player.Character
-        	if not isAlive(myChar) then return nil end
-        	local myPos = myChar.HumanoidRootPart.Position
+		local function getAimTarget()
+			local myChar = player.Character
+			if not isAlive(myChar) then return nil end
+			local myPos = myChar.HumanoidRootPart.Position
 
-        	local onlyKnifeHolders
-        	if toolMatches(myChar, CONFIG.ESP.KnifeKeywords) then
-        		onlyKnifeHolders = false -- у тебя нож: целимся в ближайшего
-        	elseif toolMatches(myChar, CONFIG.ESP.GunKeywords) then
-        		onlyKnifeHolders = true  -- у тебя пистолет: целимся в игрока с ножом
-        	else
-        		return nil
-        	end
+			local onlyKnifeHolders
+			if toolMatches(myChar, CONFIG.ESP.KnifeKeywords) then
+				onlyKnifeHolders = false -- у тебя нож: целимся в ближайшего
+			elseif toolMatches(myChar, CONFIG.ESP.GunKeywords) then
+				onlyKnifeHolders = true  -- у тебя пистолет: целимся в игрока с ножом
+			else
+				return nil
+			end
 
-        	local best, bestDist = nil, math.huge
-        	for _, plr in ipairs(Players:GetPlayers()) do
-        		if plr ~= player and isAlive(plr.Character) then
-	        		if not onlyKnifeHolders or toolMatches(plr.Character, CONFIG.ESP.KnifeKeywords) then
-		        		local hrp = plr.Character.HumanoidRootPart
-		        		local d = (hrp.Position - myPos).Magnitude
-	        			if d < bestDist then
-			        		best, bestDist = hrp, d
-	     		    	end
-		        	end
-    	    	end
-        	end
-        	return best
-       end
+			local best, bestDist = nil, math.huge
+			for _, plr in ipairs(Players:GetPlayers()) do
+				if plr ~= player and isAlive(plr.Character) then
+					if not onlyKnifeHolders or toolMatches(plr.Character, CONFIG.ESP.KnifeKeywords) then
+						local hrp = plr.Character.HumanoidRootPart
+						local d = (hrp.Position - myPos).Magnitude
+						if d < bestDist then
+							best, bestDist = hrp, d
+						end
+					end
+				end
+			end
+			return best
+		end
 
-       local function aimStep()
-        	local target = getAimTarget()
-        	if not target then return end
-        	local cam = workspace.CurrentCamera
-        	local goal = CFrame.lookAt(cam.CFrame.Position, target.Position)
-        	cam.CFrame = cam.CFrame:Lerp(goal, AIM_SMOOTH)
-        end
+		local function aimStep()
+			local target = getAimTarget()
+			if not target then return end
+			local cam = workspace.CurrentCamera
+			local goal = CFrame.lookAt(cam.CFrame.Position, target.Position)
+			cam.CFrame = cam.CFrame:Lerp(goal, AIM_SMOOTH)
+		end
 
-        local function setAimbot(state)
-        	pcall(function() RunService:UnbindFromRenderStep("InsightAimbot") end)
-        	if state then
-        		RunService:BindToRenderStep("InsightAimbot", Enum.RenderPriority.Camera.Value + 1, aimStep)
-        	end
-        end
+		local function setAimbot(state)
+			pcall(function() RunService:UnbindFromRenderStep("InsightAimbot") end)
+			if state then
+				RunService:BindToRenderStep("InsightAimbot", Enum.RenderPriority.Camera.Value + 1, aimStep)
+			end
+		end
 		-- Единоразовый вызов при исполнении скрипта:
 		-- ------------------------------ ESP ------------------------------
 
@@ -1819,7 +2441,7 @@ local function redeemKey()
 				onChange = function(fn)
 					onChangeCallback = fn
 				end,
-                track
+				track
 			}
 		end
 
@@ -1922,7 +2544,7 @@ local function redeemKey()
 		local noclipToggle = createToggleRow("Noclip", false, function(state)
 			if state then startNoclip() else stopNoclip() end
 		end, "NC")
-		
+
 		local FlingTgl = createToggleRow("(UNSTABLE but works) Walkfling", false, SetFling, "WF")
 		local flingVal = createInputRow("Walkfling Value", "value", 9999, flingstr)
 		local HitboxTgl = createToggleRow("Hitbox", false, SetHitbox, "HB")
@@ -1964,20 +2586,17 @@ local function redeemKey()
 		IDValue.onChange(function()
 			CONFIG.MusicID = IDValue.get()
 		end)
-
-        local IceBtn = createbtnRow("Morgenshtern - Ice")
-
-        IceBtn.MouseButton1Click:Connect(function()
-           showNotification("Music set to Morgenshtern - Ice")
-           IDValue.Text = MusicIds.morgenstern.Ice
-           CONFIG.MusicID = "rbxassetid://" .. MusicIds.morgenstern.Ice
-        end)
+		local PlayerBtn = createbtnRow("Run IHAudioPlayer")
+		PlayerBtn.MouseButton1Click:Connect(function()
+			Initplayergui()
+			showNotification("Executed IHAudioPlayer")
+		end)
 
 		local AutoSeparator = createSeparatorRow("Autofarm")
 		local RadioToggle = createToggleRow("Start/Stop Autofarm", false, startautofarm, "AF")
 
 		local ToolsSeparator = createSeparatorRow("Sheriff/Murderer tools")
-        local AimbotToggle = createToggleRow("Aimbot (auto)", false, setAimbot, "AB")
+		local AimbotToggle = createToggleRow("Aimbot (auto)", false, setAimbot, "AB")
 		local KillAToggle = createToggleRow("Kill all as murderer", false, teleportAllLocally, "KA")
 		local KillCToggle = createToggleRow("Kill closest as murderer", false, teleportNearest, "KC")
 		local notificationSep = createSeparatorRow("Notifications")
@@ -1987,128 +2606,128 @@ local function redeemKey()
 			showNotification("Failed to fling murderer...")
 		end)
 
-			-- ---------- Close button ----------
-			local CloseButton = Instance.new("TextButton")
-			CloseButton.Size = UDim2.new(0, 30, 0, 30)
-			CloseButton.Position = UDim2.new(1, -40, 0, 12)
-			CloseButton.BackgroundTransparency = 1
-			CloseButton.Text = "X"
-			CloseButton.TextColor3 = Color3.fromRGB(200, 190, 190)
-			CloseButton.TextSize = 18
-			CloseButton.Font = Enum.Font.GothamBold
-			CloseButton.Parent = Main
-			CloseButton.ZIndex = 5
+		-- ---------- Close button ----------
+		local CloseButton = Instance.new("TextButton")
+		CloseButton.Size = UDim2.new(0, 30, 0, 30)
+		CloseButton.Position = UDim2.new(1, -40, 0, 12)
+		CloseButton.BackgroundTransparency = 1
+		CloseButton.Text = "X"
+		CloseButton.TextColor3 = Color3.fromRGB(200, 190, 190)
+		CloseButton.TextSize = 18
+		CloseButton.Font = Enum.Font.GothamBold
+		CloseButton.Parent = Main
+		CloseButton.ZIndex = 5
 
-			CloseButton.MouseEnter:Connect(function()
-				TweenService:Create(CloseButton, TweenInfo.new(0.15), {TextColor3 = ACCENT_LIGHT}):Play()
-			end)
-			CloseButton.MouseLeave:Connect(function()
-				TweenService:Create(CloseButton, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(200, 190, 190)}):Play()
-			end)
-			CloseButton.MouseButton1Click:Connect(function()
-				Main.Visible = false
-			end)
+		CloseButton.MouseEnter:Connect(function()
+			TweenService:Create(CloseButton, TweenInfo.new(0.15), {TextColor3 = ACCENT_LIGHT}):Play()
+		end)
+		CloseButton.MouseLeave:Connect(function()
+			TweenService:Create(CloseButton, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(200, 190, 190)}):Play()
+		end)
+		CloseButton.MouseButton1Click:Connect(function()
+			Main.Visible = false
+		end)
 
-			-- =====================================================
-			--     PERSISTENT MENU BUTTON (open/close hub — mobile)
-			-- =====================================================
-			local MenuButton = Instance.new("TextButton")
-			MenuButton.Size = UDim2.new(0, 46, 0, 46)
-			MenuButton.AnchorPoint = Vector2.new(1, 0.5)
-			MenuButton.Position = UDim2.new(1, -20, 0.5, 0)
-			MenuButton.BackgroundColor3 = ACCENT
-			MenuButton.Text = "="
-			MenuButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-			MenuButton.TextSize = 20
-			MenuButton.Font = Enum.Font.GothamBold
-			MenuButton.Parent = gui
+		-- =====================================================
+		--     PERSISTENT MENU BUTTON (open/close hub — mobile)
+		-- =====================================================
+		local MenuButton = Instance.new("TextButton")
+		MenuButton.Size = UDim2.new(0, 46, 0, 46)
+		MenuButton.AnchorPoint = Vector2.new(1, 0.5)
+		MenuButton.Position = UDim2.new(1, -20, 0.5, 0)
+		MenuButton.BackgroundColor3 = ACCENT
+		MenuButton.Text = "="
+		MenuButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+		MenuButton.TextSize = 20
+		MenuButton.Font = Enum.Font.GothamBold
+		MenuButton.Parent = gui
 
-			local MenuButtonCorner = Instance.new("UICorner")
-			MenuButtonCorner.CornerRadius = UDim.new(1, 0)
-			MenuButtonCorner.Parent = MenuButton
+		local MenuButtonCorner = Instance.new("UICorner")
+		MenuButtonCorner.CornerRadius = UDim.new(1, 0)
+		MenuButtonCorner.Parent = MenuButton
 
-			local MenuButtonDragger = Instance.new("UIDragDetector")
-			MenuButtonDragger.Parent = MenuButton
+		local MenuButtonDragger = Instance.new("UIDragDetector")
+		MenuButtonDragger.Parent = MenuButton
 
-			-- This object has both a dragger AND needs a click -> manual
-			-- distance-based click detection (dragger on the same object eats
-			-- MouseButton1Click otherwise, as covered earlier in this chat).
-			do
-				local CLICK_THRESHOLD = 6
-				local pressStartPos = nil
-				MenuButton.InputBegan:Connect(function(input)
-					if input.UserInputType == Enum.UserInputType.MouseButton1
-						or input.UserInputType == Enum.UserInputType.Touch then
-						pressStartPos = input.Position
-					end
-				end)
-				MenuButton.InputEnded:Connect(function(input)
-					if not pressStartPos then return end
-					if input.UserInputType == Enum.UserInputType.MouseButton1
-						or input.UserInputType == Enum.UserInputType.Touch then
-						local moved = (input.Position - pressStartPos).Magnitude
-						pressStartPos = nil
-						if moved < CLICK_THRESHOLD then
-							Main.Visible = not Main.Visible
-						end
-					end
-				end)
-			end
-
-			-- =====================================================
-			--                      HOTKEYS
-			-- =====================================================
-			UserInputService.InputBegan:Connect(function(input, processed)
-				if processed then return end
-
-				if input.KeyCode == CONFIG.FlyKey then
-					local newState = not flying
-					if newState then startFly() else stopFly() end
-					flyToggle.setState(newState)
-				elseif input.KeyCode == CONFIG.NoclipKey then
-					local newState = not noclipping
-					if newState then startNoclip() else stopNoclip() end
-					noclipToggle.setState(newState)
-				elseif input.KeyCode == CONFIG.ToggleHubKey then
-					Main.Visible = not Main.Visible
+		-- This object has both a dragger AND needs a click -> manual
+		-- distance-based click detection (dragger on the same object eats
+		-- MouseButton1Click otherwise, as covered earlier in this chat).
+		do
+			local CLICK_THRESHOLD = 6
+			local pressStartPos = nil
+			MenuButton.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1
+					or input.UserInputType == Enum.UserInputType.Touch then
+					pressStartPos = input.Position
 				end
 			end)
-
-			-- =====================================================
-			--                    RESPAWN HANDLING
-			-- =====================================================
-			-- THE bug fix: character/humanoid/rootPart are now actually
-			-- reassigned, defaults recaptured, and every connection rebuilt
-			-- against the NEW Humanoid instead of the destroyed old one.
-			player.CharacterAdded:Connect(function(newChar)
-				character = newChar
-				humanoid = newChar:WaitForChild("Humanoid")
-				rootPart = newChar:WaitForChild("HumanoidRootPart")
-				captureDefaults()
-				connectHumanoidStateSignal()
-
-				if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
-				if noclipConnection then noclipConnection:Disconnect(); noclipConnection = nil end
-
-				flying, noclipping, speedBoosted, highJumping, speedGlitching, classicForced =
-					false, false, false, false, false, false
-
-				flyToggle.setState(false)
-				noclipToggle.setState(false)
-				speedToggle.setState(false)
-				glitchToggle.setState(false)
-				jumpToggle.setState(false)
-				jumpPowerToggle.setState(false)
-				-- ESP is left running across respawns on purpose (it watches
-				-- OTHER players, your own death doesn't need to reset it).
-                resetAll()
+			MenuButton.InputEnded:Connect(function(input)
+				if not pressStartPos then return end
+				if input.UserInputType == Enum.UserInputType.MouseButton1
+					or input.UserInputType == Enum.UserInputType.Touch then
+					local moved = (input.Position - pressStartPos).Magnitude
+					pressStartPos = nil
+					if moved < CLICK_THRESHOLD then
+						Main.Visible = not Main.Visible
+					end
+				end
 			end)
+		end
 
-			local finalTime = myTimer:Stop()
-			showNotification("Insight Hub loaded in: ".. timet)
+		-- =====================================================
+		--                      HOTKEYS
+		-- =====================================================
+		UserInputService.InputBegan:Connect(function(input, processed)
+			if processed then return end
 
-			task.wait(0.6)
-			keygui:Destroy()
+			if input.KeyCode == CONFIG.FlyKey then
+				local newState = not flying
+				if newState then startFly() else stopFly() end
+				flyToggle.setState(newState)
+			elseif input.KeyCode == CONFIG.NoclipKey then
+				local newState = not noclipping
+				if newState then startNoclip() else stopNoclip() end
+				noclipToggle.setState(newState)
+			elseif input.KeyCode == CONFIG.ToggleHubKey then
+				Main.Visible = not Main.Visible
+			end
+		end)
+
+		-- =====================================================
+		--                    RESPAWN HANDLING
+		-- =====================================================
+		-- THE bug fix: character/humanoid/rootPart are now actually
+		-- reassigned, defaults recaptured, and every connection rebuilt
+		-- against the NEW Humanoid instead of the destroyed old one.
+		player.CharacterAdded:Connect(function(newChar)
+			character = newChar
+			humanoid = newChar:WaitForChild("Humanoid")
+			rootPart = newChar:WaitForChild("HumanoidRootPart")
+			captureDefaults()
+			connectHumanoidStateSignal()
+
+			if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
+			if noclipConnection then noclipConnection:Disconnect(); noclipConnection = nil end
+
+			flying, noclipping, speedBoosted, highJumping, speedGlitching, classicForced =
+				false, false, false, false, false, false
+
+			flyToggle.setState(false)
+			noclipToggle.setState(false)
+			speedToggle.setState(false)
+			glitchToggle.setState(false)
+			jumpToggle.setState(false)
+			jumpPowerToggle.setState(false)
+			-- ESP is left running across respawns on purpose (it watches
+			-- OTHER players, your own death doesn't need to reset it).
+			resetAll()
+		end)
+
+		local finalTime = myTimer:Stop()
+		showNotification("Insight Hub loaded in: ".. timet)
+
+		task.wait(0.6)
+		keygui:Destroy()
 
 
 	else
