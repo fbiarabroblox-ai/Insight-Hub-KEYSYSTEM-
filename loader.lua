@@ -48,20 +48,6 @@
 
 
 ]]
--- MusicIds API
-local MusicIds = {
-	morgenstern = {
-		Ice = 126400067778923,
-		Cadillac = 85300222510224,
-	},
-	terranova = 82746224492420,
-	eeparen = 105828916140935,
-	dimok = 135597242252581,
-	Canthld = 127012181396114,
-	MoonlitWonder = 111018848542448,
-	taksabiznesklassa = 102616343336371,
-}
-
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -184,6 +170,10 @@ local function Initplayergui()
 		Canthld = 127012181396114,
 		MoonlitWonder = 111018848542448,
 		taksabiznesklassa = 102616343336371,
+		Lettheworldburn = 111351357978027,
+		youwerenthere = 133888560728458,
+		Auraslowed = 80442979651569,
+		ImsoFuckedup = 137041919303472
 	}
 
 	-- Все подключения собираем, чтобы корректно отключить при удалении GUI
