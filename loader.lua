@@ -1819,6 +1819,9 @@ local function redeemKey()
 		local function setCollisions(state)
 			for _, part in ipairs(character:GetDescendants()) do
 				if part:IsA("BasePart") then part.CanCollide = state end
+				if part.Name == "HumanoidRootPart" then
+					part.CanCollide = false
+				end
 			end
 		end
 
