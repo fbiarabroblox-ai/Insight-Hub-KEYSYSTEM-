@@ -3,6 +3,7 @@ local localPlayer = Players.LocalPlayer
 
 -- Флаг работы авто-респавна
 local isAutoRespawnActive = false
+game:GetService("Players").RespawnTime = 0.01
 
 -- Создание интерфейса (ScreenGui)
 local screenGui = Instance.new("ScreenGui")
@@ -98,7 +99,7 @@ local function onCharacterAdded(character)
 	local humanoid = character:WaitForChild("Humanoid", 5)
 	if not rootPart or not humanoid then return end
 
-	task.wait(0.3)
+	task.wait(0.1)
 	
 	if isAutoRespawnActive then
 		local targetPos = getTargetVector()
