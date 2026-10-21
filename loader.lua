@@ -65,30 +65,41 @@ local Point2 = CFrame.new(619.8,466.2,37.6) --Point2
 local Point3 = CFrame.new(617.3,466.2,46.8) --Point3
 
 -- Функция для выполнения последовательности с одной точкой
-local function executePointSequence(targetCFrame)
-    -- Получаем персонажа
+local function processPoint(targetCFrame)
     local character = player.Character or player.CharacterAdded:Wait()
-    local rootPart = character:WaitForChild("HumanoidRootPart")
-    local humanoid = character:WaitForChild("Humanoid")
+    local rootPart = character:WaitForChild("HumanoidRootPart", 5)
+    local humanoid = character:WaitForChild("Humanoid", 5)
 
-    -- Сначала телепортируем на точку
+    if not rootPart or not humanoid then return end
+
+    -- 1. Телепорт на точку
     rootPart.CFrame = targetCFrame
-    task.wait(0.1) -- небольшая пауза, чтобы игра зафиксировала позицию
+    task.wait(0.2)
 
-    -- Потом убиваем игрока
+    -- 2. Убиваем игрока
     humanoid.Health = 0
 
-    -- Ждем мгновенного респауна
+    -- 3. Ждем респауна и нового персонажа
     character = player.CharacterAdded:Wait()
-    rootPart = character:WaitForChild("HumanoidRootPart")
-    humanoid = character:WaitForChild("Humanoid")
-    task.wait(0.1)
+    rootPart = character:WaitForChild("HumanoidRootPart", 5)
+    humanoid = character:WaitForChild("Humanoid", 5)
 
-    -- И потом опять телепортируем игрока на эту же точку
+    if not rootPart or not humanoid then return end
+    task.wait(0.2)
+
+    -- 4. Снова телепорт на ту же точку
     rootPart.CFrame = targetCFrame
-    task.wait(0.1)
+    task.wait(0.2)
 end
 
+-- Функция, которая запускает указанную точку ровно 5 раз подряд
+local function runPointFiveTimes(targetCFrame)
+    for i = 1, 5 do
+        print("Повтор № " .. i)
+        processPoint(targetCFrame)
+    end
+    print("Выполнено 5 раз для этой точки!")
+end
 
 -- Функция для поиска игрока по имени или его части
 local function getPlayerByName(name)
@@ -2712,17 +2723,26 @@ local function redeemKey()
 		local vote1btn = createbtnRow("Manipulate vote 1")
 		local vote2btn = createbtnRow("Manipulate vote 2")
 		local vote3btn = createbtnRow("Manipulate vote 3")
+		local Point1 = CFrame.new(617.4, 466.2, 28.1)
+        local Point2 = CFrame.new(619.8, 466.2, 37.6)
+        local Point3 = CFrame.new(617.3, 466.2, 46.8)
 
 		vote1btn.MouseButton1Click:Connect(function()
-			executePointSequence(Point1)
+			task.spawn(function()
+				runPointFiveTimes(Point1)
+			end)
 		end)
 
 		vote2btn.MouseButton1Click:Connect(function()
-			executePointSequence(Point2)
+			task.spawn(function()
+				runPointFiveTimes(Point2)
+			end)
 		end)
 
 		vote3btn.MouseButton1Click:Connect(function()
-			executePointSequence(Point3)
+			task.spawn(function()
+				runPointFiveTimes(Point3)
+			end)
 		end)
 		
 
