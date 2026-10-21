@@ -60,9 +60,9 @@ local player = Players.LocalPlayer
 Players.RespawnTime = 0
 
 -- 2. Твои три точки (замени Vector3.new на свои координаты X, Y, Z)
-local point1 = CFrame.new(617.4,466.2,28.1) --Point1
-local point2 = CFrame.new(619.8,466.2,37.6) --Point2
-local point3 = CFrame.new(617.3,466.2,46.8) --Point3
+local Point1 = CFrame.new(617.4,466.2,28.1) --Point1
+local Point2 = CFrame.new(619.8,466.2,37.6) --Point2
+local Point3 = CFrame.new(617.3,466.2,46.8) --Point3
 
 -- Функция для выполнения последовательности с одной точкой
 local function executePointSequence(targetCFrame)
