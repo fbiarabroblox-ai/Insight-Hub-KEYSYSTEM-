@@ -2708,7 +2708,7 @@ local function redeemKey()
 			end
 		end)
 
-		local voteSeparator = createSeparatorRow("Vote manipulation")
+		local voteSeparator = createSeparatorRow("Vote maniulation")
 		local vote1btn = createbtnRow("Manipulate vote 1")
 		local vote2btn = createbtnRow("Manipulate vote 2")
 		local vote3btn = createbtnRow("Manipulate vote 3")
