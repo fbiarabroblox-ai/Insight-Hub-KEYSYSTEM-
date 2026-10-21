@@ -1527,8 +1527,8 @@ local function redeemKey()
 
 		local targetCoinName = "Coin_Server"
 		local tweenSpeedStudsPerSec = 16
-		local UNDER_OFFSET = 3   -- на сколько стадов ниже монетки летим и куда возвращаемся
-		local TOUCH_TIME = 0.5  -- ожидание в монетке
+		local UNDER_OFFSET = 6   -- на сколько стадов ниже монетки летим и куда возвращаемся
+		local TOUCH_TIME = 0.1  -- ожидание в монетке
 		local SKIP_TIME = 10     -- сколько сек не возвращаемся к монетке, если она не исчезла
 
 		local isFarming = false
