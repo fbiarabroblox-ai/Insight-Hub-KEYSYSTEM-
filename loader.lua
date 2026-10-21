@@ -53,6 +53,43 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+-- 1. В самом начале задаем время респауна 0 секунд
+Players.RespawnTime = 0
+
+-- 2. Твои три точки (замени Vector3.new на свои координаты X, Y, Z)
+local point1 = CFrame.new(617.4,466.2,28.1) --Point1
+local point2 = CFrame.new(619.8,466.2,37.6) --Point2
+local point3 = CFrame.new(617.3,466.2,46.8) --Point3
+
+-- Функция для выполнения последовательности с одной точкой
+local function executePointSequence(targetCFrame)
+    -- Получаем персонажа
+    local character = player.Character or player.CharacterAdded:Wait()
+    local rootPart = character:WaitForChild("HumanoidRootPart")
+    local humanoid = character:WaitForChild("Humanoid")
+
+    -- Сначала телепортируем на точку
+    rootPart.CFrame = targetCFrame
+    task.wait(0.1) -- небольшая пауза, чтобы игра зафиксировала позицию
+
+    -- Потом убиваем игрока
+    humanoid.Health = 0
+
+    -- Ждем мгновенного респауна
+    character = player.CharacterAdded:Wait()
+    rootPart = character:WaitForChild("HumanoidRootPart")
+    humanoid = character:WaitForChild("Humanoid")
+    task.wait(0.1)
+
+    -- И потом опять телепортируем игрока на эту же точку
+    rootPart.CFrame = targetCFrame
+    task.wait(0.1)
+end
+
+
 -- Функция для поиска игрока по имени или его части
 local function getPlayerByName(name)
 	name = name:lower()
@@ -2670,6 +2707,24 @@ local function redeemKey()
 				humanoid.JumpPower = value
 			end
 		end)
+
+		local voteSeparator = CreateSeparatorRow("Vote manipulation")
+		local vote1btn = createbtnRow("Manipulate vote 1")
+		local vote2btn = createbtnRow("Manipulate vote 2")
+		local vote3btn = createbtnRow("Manipulate vote 3")
+
+		vote1btn.MouseButton1Click:Connect(function()
+			executePointSequence(Point1)
+		end)
+
+		vote2btn.MouseButton1Click:Connect(function()
+			executePointSequence(Point2)
+		end)
+
+		vote3btn.MouseButton1Click:Connect(function()
+			executePointSequence(Point3)
+		end)
+		
 
 		local jumpPowerToggle = createToggleRow("(Classic) Use JumpPower", false, applyClassicJumpPower, "UJ")
 
